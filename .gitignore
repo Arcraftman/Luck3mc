@@ -12,6 +12,7 @@ venv/
 env/
 # Stale venv left over from the pre-rename `statcrawler` package.
 .stacrawler/
+.luck3mc
 
 # Tooling caches
 .mypy_cache/

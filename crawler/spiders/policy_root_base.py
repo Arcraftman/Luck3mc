@@ -103,6 +103,10 @@ class PolicyRootBaseSpider(CrawlSpider):
 
     # ------------------------------------------------------------------ #
     def __init__(self, roots: str | None = None, *args, **kwargs):
+        # 注意：Scrapy 的 Spider 基类自带只读 property `logger`
+        # （返回 logging.getLogger(self.name)），不能用 `self.logger = ...` 赋值。
+        # 直接 self.logger 即可，无需初始化。
+
         # Resolve roots BEFORE super().__init__ so CrawlSpider._compile_rules()
         # sees the assembled ``self.rules``.
         self._roots = self._resolve_roots(roots)

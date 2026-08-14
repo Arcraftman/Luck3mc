@@ -30,6 +30,7 @@ from pathlib import Path
 from crawler.config import get_settings
 from crawler.notifiers import get_notifier
 from crawler.utils.config_loader import load_config
+from crawler.utils.diagnostics import check_config
 from crawler.utils.log_config import get_logger
 
 logger = get_logger(__name__)
@@ -151,7 +152,9 @@ def call_deepseek(
 
     key = api_key if api_key is not None else os.environ.get("DEEPSEEK_API_KEY", "")
     if not key:
+        logger.warning("DEEPSEEK_API_KEY 未设置（请在 .env 填入，或 export 该环境变量）")
         raise RuntimeError("DEEPSEEK_API_KEY 未设置（请在 .env 填入）")
+
     payload = {
         "model": model or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
         "messages": [
@@ -341,6 +344,7 @@ def run(
     service stays presentation-agnostic.
     """
     _load_dotenv()
+    check_config()
     if date_str is None:
         date_str = datetime.date.today().isoformat()
 

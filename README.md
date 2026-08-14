@@ -18,7 +18,7 @@
 - **持久化去重**：`crawled_urls` 表让去重**跨运行 / 跨机器**生效（无 DB 时自动退化为进程内去重）。
 - **关系型持久化层**：SQLAlchemy 模型 + Alembic 迁移 + `createdb` 命令，把去重与存储落库。
 - **增量 / 水位线爬取**：`IncrementalMixin` + `WatermarkStore`，跳过早于上次运行最大发布日期的旧条目。
-- **可观测性**：统一日志 + 爬取结束统计扩展。
+- **可观测性**：统一日志（按 `SCRAPY_ENV` 分层：dev=DEBUG 落盘 / prod=INFO 落盘 / test=WARNING 不落盘）+ 启动配置自检（缺失 `DEEPSEEK_API_KEY` / `DATABASE_URL` / `NOTIFY_WEBHOOK_TOKEN` 时 WARNING 提示）+ 爬取结束统计扩展。
 - **可测试 & CI**：离线 fixtures 驱动的 spider 集成测试 + `policy_parse` 单测、`pyproject.toml`（ruff/mypy/black/isort）、GitHub Actions CI、Dockerfile / docker-compose。
 
 ## 目录结构
@@ -75,6 +75,50 @@ caishui  gaoqi  gongxin  gov_policy_root  kexiao  yanfa
 
 > **没有单独的"JS/静态"清单了**：旧架构里 10 个硬编码 spider（含 4 个 JS 站）已合并。JS 渲染的站点（如 `12366`、`miit_zjtx`）现在只是 YAML 里带 `js: true` 标记的根，spider 在 `start()` / `process_request` 中自动给这些请求注入 `meta["playwright"]`——**不写任何域名常量**。要加一个 JS 站，只需在对应分类块加一条 `js: true` 的根。
 
+## 前后端同时启动（本地开发）
+
+前端 Vite 开发服务器使用 `5200` 端口，后端 FastAPI 使用 `8000` 端口。建议先完成依赖安装，再分别启动两个服务。
+
+### 方式一：两个终端启动（推荐）
+
+终端一，启动后端：
+
+```bash
+cd /home/steve/PythonC/Luck3mc
+source .venv/bin/activate
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+终端二，启动前端：
+
+```bash
+cd /home/steve/PythonC/Luck3mc/frontend
+npm install                         # 首次运行执行；已有依赖可跳过
+npm run dev -- --host 0.0.0.0
+```
+
+启动后访问：
+
+- 前端：<http://localhost:5200>
+- 后端健康检查：<http://localhost:8000/health>
+- 后端 API 文档：<http://localhost:8000/docs>
+
+### 方式二：一条命令同时启动
+
+在项目根目录执行。需要系统已安装 `tmux`，并且 Python 虚拟环境及前端依赖已经准备好：
+
+```bash
+cd /home/steve/PythonC/Luck3mc
+source .venv/bin/activate
+tmux new-session -d -s luck3mc-dev 'uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000' \; split-window -h 'cd frontend && npm run dev -- --host 0.0.0.0' \; attach-session -t luck3mc-dev
+```
+
+关闭两个服务：在 tmux 中按 `Ctrl-B`，再按 `D` 离开会话；需要彻底停止时执行：
+
+```bash
+tmux kill-session -t luck3mc-dev
+```
+
 ## 快速开始
 
 ```bash
@@ -82,19 +126,29 @@ caishui  gaoqi  gongxin  gov_policy_root  kexiao  yanfa
 bash scripts/setup.sh
 source .venv/bin/activate        # Windows: .\.venv\Scripts\activate
 
-# 2. 准备数据库（可选；不配置 DATABASE_URL 也能跑，数据落 JSONL）
+# 2. 配置密钥（重要：代码只读取 .env，不读 .env.example！）
+cp .env.example .env
+#   编辑 .env，至少填入：
+#     DEEPSEEK_API_KEY=sk-xxxx        # 生成每日报告必需
+#     NOTIFY_WEBHOOK_TOKEN=xxxx       # 微信推送必需（可选）
+#   不建 .env 时，启动时日志会 WARNING 提示缺失的配置项。
+scrapy monitor --help            # 确认能跑起来（会打印配置自检结果）
+
+# 3. 准备数据库（可选；不配置 DATABASE_URL 也能跑，数据落 JSONL）
 export DATABASE_URL="sqlite:///data/crawler.db"
 scrapy createdb                  # 建表 / 跑 Alembic 迁移
 
-# 3. 运行一个分类爬虫（从 gov_categories.yaml 读该分类的 roots）
+# 4. 运行一个分类爬虫（从 gov_categories.yaml 读该分类的 roots）
 SCRAPY_ENV=development scrapy crawl caishui
 
 # 或用临时 roots 覆盖 YAML，抓任意站点（不写代码）：
 scrapy crawl gov_policy_root -a roots=https://www.gov.cn/zhengce/
 
-# 4. 运行测试（含离线 spider 集成测试，无需联网）
+# 5. 运行测试（含离线 spider 集成测试，无需联网）
 pytest
 ```
+
+> **密钥入口是 `.env`，不是 `.env.example`**：所有 `DEEPSEEK_API_KEY` / `NOTIFY_WEBHOOK_TOKEN` / `DATABASE_URL` 等真实值都写在仓库根目录的 `.env`（已被 gitignore）。`.env.example` 只是模板，**代码不会读取它**——把 key 写进 `.env.example` 会导致"配了但没生效"的假象（本项目早期就踩过这个坑）。`.env` 不存在时，启动会有 WARNING 提示，但爬虫照常运行（仅报告/推送环节会失败）。
 
 ## JS 站点：启用 Playwright（可选）
 
@@ -120,6 +174,45 @@ playwright install chromium       # 下载浏览器二进制
 ```bash
 docker compose -f docker-compose.yml run --rm crawler scrapy crawl caishui
 ```
+
+## 日期过滤（只爬指定起点之后）
+
+`DateFilterPipeline` 提供两个**正交、可独立开关**的日期闸门（都在 `crawler/settings/base.py` 有默认值，可通过环境变量或 `-s` 覆盖）：
+
+| 设置 | 含义 | 默认 |
+|------|------|------|
+| `CRAWL_FROM_DATE` | 丢弃发布日期**早于**该日期的条目（ISO `YYYY-MM-DD`） | `2026-01-01` |
+| `CRAWL_TODAY_ONLY` | 只保留**当天**发布的条目（严格日级巡检用） | `false` |
+
+- 两个闸门互不耦合：可只开其一、都开、或都关（都关 = 全量，不过滤）。
+- 解析失败的发布日期**不会被丢弃**（仅 WARNING 保留），避免误删。
+- 阈值由 settings 注入 pipeline，pipeline 自身不写死任何日期——保持解耦。
+
+常用场景：
+
+```bash
+# 默认：只保留 2026-01-01 起的政策（历史回溯也只留 2026+）
+scrapy monitor
+
+# 只要今天新发的（严格日级巡检）
+scrapy monitor -s CRAWL_TODAY_ONLY=1
+
+# 自定义起点，例如只要 2025 年以来的
+scrapy crawl caishui -s CRAWL_FROM_DATE=2025-01-01
+```
+
+> 本项目当前目标为"**只爬 2026 年 1 月 1 日起**"，因此 `CRAWL_FROM_DATE` 全局默认已设为 `2026-01-01`。`monitor` 命令默认尊重该值（不再强制只抓当天），需要当天模式时显式 `-s CRAWL_TODAY_ONLY=1`。
+
+## 统一日志与配置自检
+
+- **日志按环境分层**：由 `SCRAPY_ENV` 决定（`development`=DEBUG 落盘 / `production`=INFO 落盘 / `testing`=WARNING 不落盘），日志统一写入 `logs/crawler.log` 并同时打印到控制台。入口命令（`scrapy monitor` / `scrapy createdb`）在启动时按当前环境的 `LOG_*` 设置初始化，不写死。
+- **配置自检**：启动时 `crawler/utils/diagnostics.py` 会检查关键环境变量，缺失则打印 `WARNING`，例如：
+  ```
+  WARNING: 配置缺失 [必需]: DEEPSEEK_API_KEY 未设置 — 生成每日报告必需…
+  WARNING: 配置缺失 [可选]: DATABASE_URL 未设置 — 跨运行去重依赖…
+  WARNING: 配置缺失 [可选]: NOTIFY_WEBHOOK_TOKEN 未设置 — 微信推送必需…
+  ```
+  这比"跑到 DeepSeek 调用时才报错"更早暴露问题。
 
 ## 配置优先级
 
@@ -153,7 +246,7 @@ docker compose -f docker-compose.yml run --rm crawler scrapy crawl caishui
 本项目的核心用途之一：**持续巡检这些官网，一旦发现新的政策 URL，就推送到微信**。
 
 ### 工作原理
-1. `scrapy monitor` 命令一次性跑完 `config/*.yaml` 里 `monitor.spiders` 列出的所有分类 spider（默认 5 个：`gov_policy_root` / `caishui` / `gaoqi` / `yanfa` / `kexiao`，`gongxin` 因暂无根而留空）。
+1. `scrapy monitor` 命令一次性跑完 `config/*.yaml` 里 `monitor.spiders` 列出的所有分类 spider（默认 5 个：`gov_policy_root` / `caishui` / `gaoqi` / `yanfa` / `kexiao`，`gongxin` 因暂无根而留空）。默认尊重 `CRAWL_FROM_DATE=2026-01-01`，即只保留 2026 年起的政策；需严格当天模式时加 `-s CRAWL_TODAY_ONLY=1`。
 2. 依赖 `crawled_urls` 去重表做**跨运行**判断：只有数据库里没见过的新 URL 才会被当作"新增"。
 3. 新增条目在经过 `NotifyPipeline`（位于去重管线之后，order 250）时，调用通知器把 `{标题, URL, 发布日期, 来源}` 推送到微信。
 

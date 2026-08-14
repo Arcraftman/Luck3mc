@@ -13,6 +13,6 @@ INGEST_TOKEN = os.environ.get("BACKEND_INGEST_TOKEN", "change-me-ingest-token")
 # Comma-separated allowed CORS origins (the Vue dev server, and the prod domain).
 CORS_ORIGINS = [
     o.strip()
-    for o in os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(",")
+    for o in os.environ.get("CORS_ORIGINS", "http://localhost:5200").split(",")
     if o.strip()
 ]

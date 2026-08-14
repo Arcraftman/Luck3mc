@@ -119,6 +119,17 @@ LOG_DATEFORMAT = "%Y-%m-%d %H:%M:%S"
 LOG_FILE = str(LOGS_DIR / f"{BOT_NAME}.log")
 
 # ---------------------------------------------------------------------------
+# Date gating for crawled items (consumed by DateFilterPipeline)
+# ---------------------------------------------------------------------------
+# CRAWL_TODAY_ONLY: keep only *today*'s items (the scheduled daily pass).
+# CRAWL_FROM_DATE: drop items published before this date (ISO ``YYYY-MM-DD``).
+#   e.g. "2026-01-01" => only keep policies from 2026 onward. Empty = no floor.
+# The two are orthogonal: set either, both, or neither. The pipeline reads
+# them from settings, so the threshold stays decoupled from the gate logic.
+CRAWL_TODAY_ONLY = os.environ.get("CRAWL_TODAY_ONLY", "false").lower() in ("1", "true", "yes")
+CRAWL_FROM_DATE = os.environ.get("CRAWL_FROM_DATE", "2026-01-01")
+
+# ---------------------------------------------------------------------------
 # Feed / export defaults (used when a spider yields without a pipeline sink)
 # ---------------------------------------------------------------------------
 FEED_EXPORT_ENCODING = "utf-8"

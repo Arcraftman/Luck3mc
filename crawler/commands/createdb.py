@@ -14,8 +14,9 @@ import sys
 from pathlib import Path
 
 from scrapy.commands import ScrapyCommand
+from crawler.utils.log_config import get_logger , init_logging
+logger = get_logger(__name__)
 
-logger = logging.getLogger(__name__)
 
 
 class Command(ScrapyCommand):
@@ -29,6 +30,12 @@ class Command(ScrapyCommand):
         return "Initialise the crawler database (run migrations / create tables)"
 
     def run(self, args, opts) -> None:
+
+        init_logging(
+            level=self.settings.get("LOG_LEVEL", "INFO"),
+            log_file=self.settings.get("LOG_FILE"),
+        )
+
         if self.settings is None:
             logger.error("Settings are not available; cannot create the database.")
             sys.exit(1)

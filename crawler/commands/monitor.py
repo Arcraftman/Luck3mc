@@ -26,7 +26,10 @@ from scrapy.commands import ScrapyCommand  # type: ignore
 # module import time (and to avoid static analysis issues in some editors).
 from scrapy.utils.project import get_project_settings  # type: ignore
 
-logger = logging.getLogger(__name__)
+from crawler.utils.diagnostics import check_config
+from crawler.utils.log_config import get_logger, init_logging
+
+logger = get_logger(__name__)
 
 
 class Command(ScrapyCommand):
@@ -42,6 +45,14 @@ class Command(ScrapyCommand):
     def run(self, args, opts):
         settings = get_project_settings()
 
+        # 统一日志初始化 + 配置自检（缺失则 warning，不中断）。
+        # 日志行为由当前 SCRAPY_ENV 决定：dev=DEBUG 落盘 / prod=INFO 落盘 / test=WARNING 不落盘。
+        init_logging(
+            level=settings.get("LOG_LEVEL", "INFO"),
+            log_file=settings.get("LOG_FILE"),
+        )
+        check_config()
+
         # Import here to ensure the Twisted reactor isn't installed at
         # module-import time and to prevent some linters from flagging the
         # import when Scrapy isn't available in the analysis environment.
@@ -52,12 +63,15 @@ class Command(ScrapyCommand):
         if "NOTIFY_ENABLED" not in settings:
             settings.set("NOTIFY_ENABLED", False)
 
-        # Only surface items published *today* — never the historical backlog.
-        # This keeps the daily pass clean on its very first run. Operators who
-        # deliberately want the full history can opt out with
-        # ``-s CRAWL_TODAY_ONLY=0``.
-        if "CRAWL_TODAY_ONLY" not in settings:
-            settings.set("CRAWL_TODAY_ONLY", True)
+        # Date gating for the monitor pass.
+        # Default behaviour (no flags): respect CRAWL_FROM_DATE from settings
+        # (default 2026-01-01) so only policies from that date onward are kept —
+        # this is the "keep 2026+ history" mode, NOT only-today.
+        # Operators who want a strict daily pass can opt in with
+        # ``-s CRAWL_TODAY_ONLY=1``; that overrides the from-date floor with a
+        # today-only gate. We do NOT force CRAWL_TODAY_ONLY here anymore.
+        if "CRAWL_FROM_DATE" not in settings:
+            settings.set("CRAWL_FROM_DATE", "2026-01-01")
 
         spiders = list(settings.get("MONITOR_SPIDERS") or [])
         if not spiders:

@@ -1,6 +1,6 @@
 // API client for the STACrawler FastAPI backend.
 // Override the base URL with VITE_API_BASE (e.g. the prod domain) if needed.
-const BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+const BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8100'
 
 export async function fetchPolicies({ q = '', source = '', limit = 50, skip = 0 } = {}) {
   const params = new URLSearchParams({ limit, skip })
