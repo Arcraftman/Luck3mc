@@ -1,0 +1,48 @@
+# Production environment externalised config.
+
+scraping:
+  robots_obey: true
+  concurrent_requests: 64
+  download_delay: 1.0
+  autothrottle: true
+
+proxy:
+  pool: "${PROXY_POOL}"
+  api_url: "${PROXY_API_URL}"
+
+storage:
+  database_url: "${DATABASE_URL}"
+  output_dir: "/var/lib/crawler/data"
+
+logging:
+  level: "INFO"
+  json: true
+
+# --- Notification (monitor -> WeChat) ---------------------------------------
+# See config/development.yaml for the backend notes. In production the token
+# should come from the environment (${NOTIFY_WEBHOOK_TOKEN}) rather than here.
+notify:
+  enabled: "true"
+  backend: "webhook"
+  webhook_url: ""
+  webhook_kind: "pushplus"
+  webhook_token: "${NOTIFY_WEBHOOK_TOKEN}"
+
+# --- Monitor (scheduled 24h polling) ----------------------------------------
+monitor:
+  spiders:
+    - gov_policy_root
+    - caishui
+    - gaoqi
+    - yanfa
+    - kexiao
+  # 只保留含这些关键词的"财税补贴政策"条目；留空列表 = 使用代码内置默认词表。
+  subsidy_keywords: []
+
+# --- Backend sink (crawler -> FastAPI -> Vue frontend) -----------------------
+# Disabled by default; set sink_enabled: true and a real ingest_token when the
+# backend is deployed so crawled items also feed the web UI.
+backend:
+  ingest_url: "${BACKEND_INGEST_URL}"
+  ingest_token: "${BACKEND_INGEST_TOKEN}"
+  sink_enabled: false

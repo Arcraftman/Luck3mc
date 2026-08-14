@@ -1,0 +1,28 @@
+# VCS / caches
+.git
+.gitignore
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime data & local state (must NOT be baked into the image)
+data/*
+!data/.gitkeep
+.stacrawler/
+*.db
+logs/
+
+# Local venvs & env
+.venv/
+venv/
+.env
+
+# Windows-only / dev scripts (not needed inside the container)
+scripts/
+
+# Tests (not executed in the deployed image)
+tests/

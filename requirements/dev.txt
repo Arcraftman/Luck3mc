@@ -1,0 +1,11 @@
+# Development dependencies. Installed on top of base.txt.
+-r base.txt
+
+pytest>=8.0
+pytest-cov>=5.0
+black>=24.0
+ruff>=0.4
+mypy>=1.10
+types-requests>=2.31
+alembic>=1.13
+ipython>=8.0

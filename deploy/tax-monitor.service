@@ -1,0 +1,10 @@
+[Unit]
+Description=Tax Policy Crawler — one monitoring pass (runs in Docker)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Adjust WorkingDirectory / -f path to wherever you placed docker-compose.yml.
+WorkingDirectory=/opt/tax-crawler
+ExecStart=/usr/bin/docker compose -f /opt/tax-crawler/docker-compose.yml run --rm crawler monitor

@@ -1,0 +1,148 @@
+# =============================================================================
+# 政府政策爬虫 · 分类根配置  (PolicyRootBaseSpider / 5 个分类 spider)
+# =============================================================================
+# 这里集中存放所有「官网根地址」——Python 代码里不写任何 .gov.cn / .mof.gov.cn
+# 之类的硬编码（解耦点：加站点改这里，加分类加一个 block + 一个 ~4 行子类）。
+#
+# 每个 category 块对应一个 spider（scrapy crawl <category>），块里的 roots 是该
+# spider 要爬的所有「栏目目录根」。爬虫只在该根【同域、同路径前缀】下全量爬，
+# 自动识别并保留「政策/政府文件」，过滤时政新闻与列表/导航页。
+#
+# 字段说明（每个 root）：
+#   name   : 写入数据的 source_site 标签（用于政策视图/报告区分来源官网）
+#   url    : 栏目的【根地址】（必填）。务必填【栏目目录】，不要填某篇具体文章的
+#            .htm 链接——本爬虫按"同路径前缀"匹配，填文章 URL 只会匹配那一篇；
+#            填它的父目录，爬虫才会顺着列表页爬到该栏目下所有文章。
+#   domain : 该根所属域名（必填），限制只爬同域，避免爬到外站。
+#   js     : 可选，true 表示该根页面由 JS 渲染（如 12366 / zjtx），
+#            爬虫会为【该域名】的请求自动附加 Playwright（meta["playwright"]），
+#            需安装 scrapy-playwright + chromium；静态站点可不写或写 false。
+# =============================================================================
+
+categories:
+
+  # ===========================================================================
+  # 综合 / 地方政府（通用兜底，不含在 5 大分类里的站点放这里）
+  # ===========================================================================
+  gov_general:
+    label: 综合政府政策
+    roots:
+      - name: gov_zhengce
+        url: https://www.gov.cn/zhengce/
+        domain: www.gov.cn
+      # 上海市政府 · 政策文件栏目（示例占位，请替换成真实根地址后取消注释）
+      # 去 www.shanghai.gov.cn 找「政策文件 / 市政府文件 / 政府公报」栏目，
+      # 复制其栏目首页 URL 作为 url，并把 domain 改成对应域名。
+      # - name: shanghai_zfwj
+      #   url: https://www.shanghai.gov.cn/REPLACE_WITH_REAL_ROOT/
+      #   domain: www.shanghai.gov.cn
+
+  # ===========================================================================
+  # 一、财税政策：财政部各司子站 + 税务总局政策法规库 + 12366 纳税服务平台
+  #   下方 mof_* 根由用户提供的 25 个 URL 归纳而来（均为"栏目目录根"）
+  # ===========================================================================
+  caishui:
+    label: 财税政策
+    roots:
+      # —— 财政部各司子站（用户给的 25 个 URL 归纳）——
+      - name: mof_kjs        # 国库司
+        url: https://kjs.mof.gov.cn/zhengcefabu/
+        domain: kjs.mof.gov.cn
+      - name: mof_jrs_gszl   # 金融司 · 政策发布/公示
+        url: https://jrs.mof.gov.cn/zhengcefabu/gszl/
+        domain: jrs.mof.gov.cn
+      - name: mof_jrs_phjr   # 金融司 · 普惠金融
+        url: https://jrs.mof.gov.cn/zhengcefabu/phjr/
+        domain: jrs.mof.gov.cn
+      - name: mof_szs        # 某专员办子站
+        url: https://szs.mof.gov.cn/zhengcefabu/
+        domain: szs.mof.gov.cn
+      - name: mof_sbs        # 某司子站
+        url: https://sbs.mof.gov.cn/zhengcefabu/
+        domain: sbs.mof.gov.cn
+      - name: mof_gss        # 关税司
+        url: https://gss.mof.gov.cn/gzdt/zhengcefabu/
+        domain: gss.mof.gov.cn
+      - name: mof_zwgls      # 综合司（zcgz 政策工作栏目）
+        url: https://zwgls.mof.gov.cn/zcgz/
+        domain: zwgls.mof.gov.cn
+      - name: mof_jjs_zcfg   # 经济建设司 · 政策法规
+        url: https://jjs.mof.gov.cn/zhengcefagui/
+        domain: jjs.mof.gov.cn
+      - name: mof_jjs_tzgg   # 经济建设司 · 通知公告
+        url: https://jjs.mof.gov.cn/tongzhigonggao/
+        domain: jjs.mof.gov.cn
+      - name: mof_nys        # 农业农村司
+        url: https://nys.mof.gov.cn/czpjZhengCeFaBu_2_2/
+        domain: nys.mof.gov.cn
+      - name: mof_gks        # 国库司（规章管理制度栏目）
+        url: https://gks.mof.gov.cn/guizhangzhidu/
+        domain: gks.mof.gov.cn
+      # —— 财税核心站点（用户给定的一、财税政策 4 个核心入口）——
+      - name: chinatax_fgk   # 国家税务总局政策法规库
+        url: https://fgk.chinatax.gov.cn/zcfgk
+        domain: fgk.chinatax.gov.cn
+      - name: mof_fgk        # 财政部财政法规管理系统
+        url: https://fgk.mof.gov.cn/
+        domain: fgk.mof.gov.cn
+      - name: chinatax_www   # 国家税务总局官网
+        url: https://www.chinatax.gov.cn/
+        domain: www.chinatax.gov.cn
+      - name: chinatax_12366 # 12366 纳税服务平台（JS 渲染，需 Playwright）
+        url: https://12366.chinatax.gov.cn/sscx/
+        domain: 12366.chinatax.gov.cn
+        js: true
+
+  # ===========================================================================
+  # 二、高新技术企业政策
+  #   用户提供的 3 个【栏目目录根】（均为栏目目录，非具体文章 .htm）
+  # ===========================================================================
+  gaoqi:
+    label: 高新技术企业政策
+    roots:
+      - name: innocom_gqrdw   # 高新技术企业认定管理工作网 · 高企认定栏目
+        url: http://www.innocom.gov.cn/gqrdw/
+        domain: www.innocom.gov.cn
+      - name: gjzwfw_art      # 国家政务服务平台 · 政策文章栏目（高企政策）
+        url: https://zc.gjzwfw.gov.cn/art/
+        domain: zc.gjzwfw.gov.cn
+      - name: most_xxgk       # 科学技术部 · 信息公开 · 法定主动公开内容
+        url: https://www.most.gov.cn/xxgk/xinxifenlei/fdzdgknr/
+        domain: www.most.gov.cn
+
+  # ===========================================================================
+  # 三、工信局（工业和信息化）政策
+  #   注：原 miit + zjtx 已划归「五、科技型中小企业（科小）政策」(kexiao)，
+  #   故此处暂为空占位；后续若要采集"非科小的工信局政策"，在此补充 root 即可。
+  #   空 roots 时 spider 会因 no_roots_configured 自动 CloseSpider，安全不报错。
+  # ===========================================================================
+  gongxin:
+    label: 工信政策
+    roots: []
+
+  # ===========================================================================
+  # 四、研发费用政策
+  # ===========================================================================
+  yanfa:
+    label: 研发费用政策
+    roots:
+      - name: chinatax_fgk   # 国家税务总局政策法规库（研发费用加计扣除）
+        url: https://fgk.chinatax.gov.cn/zcfgk
+        domain: fgk.chinatax.gov.cn
+      - name: most_qykjzc    # 科技部 · 企业科技政策专区
+        url: https://www.most.gov.cn/ztzl/qykjzc/
+        domain: www.most.gov.cn
+
+  # ===========================================================================
+  # 五、科技型中小企业（科小）政策
+  # ===========================================================================
+  kexiao:
+    label: 科技型中小企业政策
+    roots:
+      - name: miit_xwfb_zxzc  # 工业和信息化部 · 政策性文件栏目（科小相关政策）
+        url: https://www.miit.gov.cn/xwfb/zxzc/
+        domain: www.miit.gov.cn
+      - name: miit_zjtx       # 优质中小企业梯度培育平台（科小评价入口，JS 渲染，需 Playwright）
+        url: https://zjtx.miit.gov.cn/
+        domain: zjtx.miit.gov.cn
+        js: true

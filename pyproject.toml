@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "state-taxation-admin-crawler"
+version = "0.1.0"
+description = "Enterprise Scrapy crawler for State Taxation Administration public data"
+readme = "README.md"
+requires-python = ">=3.10"
+# Runtime deps mirror requirements/base.txt. The split requirements/*.txt files
+# remain the source of truth for pinned builds; this list keeps `pip install .`
+# working and documents the core stack.
+dependencies = [
+    "scrapy>=2.11,<3.0",
+    "requests>=2.31.0",
+    "PyYAML>=6.0",
+    "itemadapter>=0.9.0",
+    "itemloaders>=1.1.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+# Dev tools (pytest / ruff / mypy) are kept optional so production installs stay lean.
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["crawler", "tests"]
+# Alembic autogenerates migrations; don't gate generated code on lint style.
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP", "SIM"]
+ignore = ["E501", "B008", "B904"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B", "SIM"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
+disallow_untyped_defs = false
+no_implicit_optional = true
+
+# Scrapy declares ``name`` / ``allowed_domains`` / ``start_urls`` as plain class
+# attributes (no ``ClassVar``), so mypy treats them as instance variables and
+# flags the conventional subclass overrides as "Cannot override instance
+# variable with class variable". That is a known Scrapy+mypy false positive, not
+# a real defect, so we silence the ``misc`` code for the spider package only.
+[[tool.mypy.overrides]]
+module = "crawler.spiders.*"
+disable_error_code = "misc"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "offline: runs against local HTML fixtures, requires no network access",
+]
+addopts = "-ra"

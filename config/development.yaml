@@ -1,0 +1,57 @@
+# Development environment externalised config.
+# Secrets should come from environment variables, not this file.
+
+scraping:
+  robots_obey: true
+  concurrent_requests: 8
+  download_delay: 2.0
+  autothrottle: true
+
+proxy:
+  # Static pool or API URL; empty disables rotation.
+  pool: ""
+  api_url: ""
+
+storage:
+  # Default local SQLite ledger so cross-run de-duplication (the heart of the
+  # 24h monitor) works out of the box. Override with DATABASE_URL env in prod.
+  database_url: "sqlite:///data/crawler.db"
+  output_dir: "data"
+
+logging:
+  level: "DEBUG"
+  json: false
+
+# --- Notification (monitor -> WeChat) ---------------------------------------
+# Personal WeChat has no official bot API. The recommended path is `webhook`
+# with Server酱 (serverchan) or pushplus, which deliver to your personal
+# WeChat as a service message. Fill `webhook_token` (Server酱/pushplus) or
+# `webhook_url` (企业微信机器人 / generic). Set `enabled: true` to arm it.
+notify:
+  enabled: true               # 已启用：新发现的政策将推送到微信
+  backend: "webhook"          # webhook | wechaty
+  webhook_url: ""             # for wecom / generic
+  webhook_kind: "pushplus"    # serverchan | pushplus | wecom | generic
+  webhook_token: "${NOTIFY_WEBHOOK_TOKEN}"  # pushplus 用户令牌
+
+# --- Monitor (scheduled 24h polling) ----------------------------------------
+# Spiders swept on each `scrapy monitor` pass. The JS/Layui/SPA ones need
+# scrapy-playwright + Chromium to actually fetch.
+monitor:
+  spiders:
+    - gov_policy_root
+    - caishui
+    - gaoqi
+    - yanfa
+    - kexiao
+  # 只保留含这些关键词的"财税补贴政策"条目；留空列表 = 使用代码内置默认词表。
+  subsidy_keywords: []
+
+# --- Backend sink (crawler -> FastAPI -> Vue frontend) -----------------------
+# When enabled, BackendSinkPipeline POSTs each crawled item to the backend's
+# /api/ingest/policy so the Vue frontend can display it live. The crawler keeps
+# its existing JSONL/DB output and WeChat push untouched. Disabled by default.
+backend:
+  ingest_url: "http://localhost:8000"
+  ingest_token: "${BACKEND_INGEST_TOKEN}"
+  sink_enabled: false          # 设为 true 并配置 token 后，才会把数据发往后端

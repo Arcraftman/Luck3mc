@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+# Stale venv left over from the pre-rename `statcrawler` package.
+.stacrawler/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+
+# Scrapy / runtime artifacts
+.scrapy/
+logs/*
+!logs/.gitkeep
+data/*
+!data/.gitkeep
+# Generated daily reports + stray root-level report files
+reports/
+report_*.md
+# Monitor run log (now under logs/, but keep the root-level guard)
+/monitor_run.log
+/logs
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+.workbuddy
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+

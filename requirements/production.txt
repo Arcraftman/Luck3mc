@@ -1,0 +1,6 @@
+# Production dependencies. Includes optional storage/delivery connectors.
+-r base.txt
+
+psycopg2-binary>=2.9
+redis>=5.0
+sentry-sdk>=2.0

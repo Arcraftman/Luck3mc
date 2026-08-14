@@ -1,0 +1,22 @@
+# StateTaxationAdminCrawler runtime dependencies
+# Install into your virtualenv, e.g.:
+#   python -m pip install -r requirements.txt
+# (On Windows with the project's .stacrawler env, run from the project root.)
+
+# --- Core scraping stack ---
+Scrapy>=2.17.0
+itemloaders>=1.2.0
+itemadapter>=0.9.0
+
+# --- Persistence / de-duplication (crawled_urls ledger, cross-run de-dup) ---
+SQLAlchemy>=2.0.30
+alembic>=1.13.0
+
+# --- Config loading (config/*.yaml) ---
+PyYAML>=6.0
+
+# --- JS-rendered sites (chinatax_fgk / mof_fgk / miit_zjtx) ---
+# Optional for static-site monitoring, required for the 3 Playwright spiders.
+# After installing, also run:  playwright install chromium
+scrapy-playwright>=0.0.46
+playwright>=1.40.0

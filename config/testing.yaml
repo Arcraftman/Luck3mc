@@ -1,0 +1,19 @@
+# Testing environment externalised config (used by the test suite).
+
+scraping:
+  robots_obey: false
+  concurrent_requests: 1
+  download_delay: 0
+  autothrottle: false
+
+proxy:
+  pool: ""
+  api_url: ""
+
+storage:
+  database_url: ""
+  output_dir: "data/test_output"
+
+logging:
+  level: "WARNING"
+  json: false

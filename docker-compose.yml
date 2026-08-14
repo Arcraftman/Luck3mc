@@ -1,0 +1,41 @@
+# Tax Policy Crawler — production deployment on Linux.
+#
+# Quick start:
+#   cp .env.example .env        # fill NOTIFY_WEBHOOK_TOKEN (your Server酱/pushplus key)
+#   docker compose build
+#   docker compose run --rm crawler createdb   # one-time (also auto-runs on start)
+#   docker compose run --rm crawler monitor    # run one monitoring pass now
+#
+# Scheduling every 6h is done from the HOST (cron / systemd timer), NOT inside
+# the container, so the container stays stateless per run and the de-dup DB in
+# the named volume persists across passes. See deploy/ for a systemd timer.
+
+services:
+  crawler:
+    build:
+      context: .
+      args:
+        # "false" => static-only image (no Chromium); the 4 JS spiders won't work.
+        INSTALL_CHROMIUM: "true"
+    image: tax-policy-crawler:latest
+    environment:
+      SCRAPY_ENV: "production"
+      # Persistent de-dup DB — MUST live on the mounted volume, else every run
+      # re-notifies the same URLs (spam).
+      DATABASE_URL: "sqlite:////var/lib/crawler/data/crawler.db"
+      # --- WeChat push (personal WeChat via Server酱 / pushplus) ---
+      # Notification is OFF unless NOTIFY_ENABLED=true.
+      NOTIFY_ENABLED: "true"
+      NOTIFY_WEBHOOK_KIND: "${NOTIFY_WEBHOOK_KIND:-serverchan}"
+      NOTIFY_WEBHOOK_TOKEN: "${NOTIFY_WEBHOOK_TOKEN}"   # from .env
+      NOTIFY_WEBHOOK_URL: "${NOTIFY_WEBHOOK_URL}"       # only for wecom/generic
+      # --- Optional corporate proxy ---
+      PROXY_POOL: "${PROXY_POOL:-}"
+      PROXY_API_URL: "${PROXY_API_URL:-}"
+    volumes:
+      - crawler_data:/var/lib/crawler/data
+    restart: "no"            # one-shot; scheduled by the host (see deploy/)
+    command: ["monitor"]
+
+volumes:
+  crawler_data:

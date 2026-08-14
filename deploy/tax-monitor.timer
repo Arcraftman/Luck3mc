@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the tax policy monitor every 6 hours
+
+[Timer]
+# Every 6 hours, with a 5-minute random spread to avoid thundering herd.
+OnCalendar=*-*-* 0/6:00:00
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
