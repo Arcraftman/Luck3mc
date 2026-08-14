@@ -79,6 +79,25 @@ caishui  gaoqi  gongxin  gov_policy_root  kexiao  yanfa
 
 前端 Vite 开发服务器使用 `5200` 端口，后端 FastAPI 使用 `8000` 端口。建议先完成依赖安装，再分别启动两个服务。
 
+### Cloudflare Pages 部署前端
+
+前端部署到 Cloudflare 时，在 `frontend/` 目录执行：
+
+```bash
+cd /home/steve/PythonC/Luck3mc/frontend
+npm install
+npm run build
+npx wrangler deploy
+```
+
+`frontend/wrangler.jsonc` 已将 `dist/` 配置为静态资源目录。Cloudflare 项目配置应使用：
+
+- 构建命令：`npm run build`
+- 输出目录：`dist`
+- 部署目录：`frontend`
+
+> 不要执行 `npm audit fix --force` 来解决部署问题；本次失败原因是 Vite 版本和 Wrangler 自动配置要求不兼容，已将 Vite 升级到 6.x。
+
 ### 方式一：两个终端启动（推荐）
 
 终端一，启动后端：

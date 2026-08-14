@@ -47,3 +47,4 @@ report_*.md
 .coverage
 htmlcov/
 
+**/node_modules/*
