@@ -30,7 +30,7 @@ from pathlib import Path
 from crawler.config import get_settings
 from crawler.notifiers import get_notifier
 from crawler.utils.config_loader import load_config
-from crawler.utils.diagnostics import check_config
+from crawler.utils.load_diagnostics import check_config
 from crawler.utils.log_config import get_logger
 
 logger = get_logger(__name__)
