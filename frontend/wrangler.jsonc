@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "luck3mc",
+  "account_id": "85ec48b331429ddd8b75a313e54ac7e7",
   "compatibility_date": "2026-08-14",
   "assets": {
     "directory": "./dist"

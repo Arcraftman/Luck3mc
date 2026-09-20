@@ -29,6 +29,7 @@ ITEM_PIPELINES = {
     "crawler.pipelines.validation.ValidationPipeline": 100,
     "crawler.pipelines.date_filter.DateFilterPipeline": 150,
     "crawler.pipelines.deduplication.DeduplicatePipeline": 200,
+    "crawler.pipelines.backend_sink.BackendSinkPipeline": 245,
     "crawler.pipelines.notify.NotifyPipeline": 250,
     "crawler.pipelines.storage.JsonLinesExportPipeline": 300,
     "crawler.pipelines.storage.DatabasePipeline": 400,  # enabled; no-op if no DB

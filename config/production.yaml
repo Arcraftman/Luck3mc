@@ -40,9 +40,9 @@ monitor:
   subsidy_keywords: []
 
 # --- Backend sink (crawler -> FastAPI -> Vue frontend) -----------------------
-# Disabled by default; set sink_enabled: true and a real ingest_token when the
-# backend is deployed so crawled items also feed the web UI.
+# The crawler and backend run on the same local server. The shared ingest token
+# is generated automatically when BACKEND_INGEST_TOKEN is not set.
 backend:
-  ingest_url: "${BACKEND_INGEST_URL}"
+  ingest_url: "http://127.0.0.1:8000"
   ingest_token: "${BACKEND_INGEST_TOKEN}"
-  sink_enabled: false
+  sink_enabled: true

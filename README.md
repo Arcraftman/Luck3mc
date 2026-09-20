@@ -77,6 +77,26 @@ caishui  gaoqi  gongxin  gov_policy_root  kexiao  yanfa
 
 ## 前后端同时启动（本地开发）
 
+后端使用 `data/backend.db`（SQLite）保存政策与报告。SQLite 已启用 WAL、
+30 秒 busy timeout 和来源/日期索引，允许 FastAPI 读取时爬虫继续写入。
+首次建立数据库并导入历史 JSONL：
+
+```bash
+.luck3mc/bin/python scripts/backfill_backend.py
+```
+
+后续新政策由 `BackendSinkPipeline` 通过本机 `/api/ingest/policy` 增量写入；
+写入令牌优先读取 `BACKEND_INGEST_TOKEN`，未配置时自动生成到权限为 0600 的
+`data/backend-ingest-token`，后端和爬虫共享该文件，不提交到 Git。
+
+后端常驻服务：
+
+```bash
+systemctl --user link "$PWD/deploy/luck3mc-backend.service"
+systemctl --user enable --now luck3mc-backend.service
+curl http://127.0.0.1:8000/health
+```
+
 前端 Vite 开发服务器使用 `5200` 端口，后端 FastAPI 使用 `8000` 端口。建议先完成依赖安装，再分别启动两个服务。
 
 ### Cloudflare Pages 部署前端

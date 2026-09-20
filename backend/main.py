@@ -6,10 +6,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import CORS_ORIGINS
-from .db import Base, engine
+from .db import init_db
 from .routers import ingest, policies, reports, stream
 
-Base.metadata.create_all(bind=engine)
+init_db()
 
 app = FastAPI(title="STACrawler API", version="0.1.0")
 

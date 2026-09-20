@@ -54,4 +54,4 @@ monitor:
 backend:
   ingest_url: "http://localhost:8000"
   ingest_token: "${BACKEND_INGEST_TOKEN}"
-  sink_enabled: false          # 设为 true 并配置 token 后，才会把数据发往后端
+  sink_enabled: true

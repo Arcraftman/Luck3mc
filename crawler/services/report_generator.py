@@ -33,6 +33,7 @@ from crawler.notifiers import get_notifier
 from crawler.utils.config_loader import load_config
 from crawler.utils.load_diagnostics import check_config
 from crawler.utils.log_config import get_logger
+from crawler.utils.backend_connection import get_backend_ingest_token
 
 logger = get_logger(__name__)
 
@@ -347,7 +348,7 @@ def push_report_to_backend(
         data=body,
         headers={
             "Content-Type": "application/json",
-            "X-Token": cfg.get("ingest_token") or "",
+            "X-Token": cfg.get("ingest_token") or get_backend_ingest_token(),
         },
         method="POST",
     )

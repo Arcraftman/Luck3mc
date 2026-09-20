@@ -8,6 +8,9 @@ class PolicyIn(BaseModel):
     title: str
     source_url: str
     pub_date: str = ""
+    pub_datetime: str = ""
+    doc_number: str = ""
+    category: str = ""
     issuing_authority: str = ""
     source_site: str = ""
     content: str = ""
@@ -19,6 +22,7 @@ class PolicyOut(PolicyIn):
 
     id: int
     crawled_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class ReportIn(BaseModel):

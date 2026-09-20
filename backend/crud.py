@@ -16,6 +16,9 @@ def upsert_policy(db: Session, p: schemas.PolicyIn):
         # Update mutable fields; keep the original id / crawled_at.
         existing.title = p.title
         existing.pub_date = p.pub_date
+        existing.pub_datetime = p.pub_datetime
+        existing.doc_number = p.doc_number
+        existing.category = p.category
         existing.issuing_authority = p.issuing_authority
         existing.source_site = p.source_site
         existing.content = p.content
@@ -31,6 +34,16 @@ def upsert_policy(db: Session, p: schemas.PolicyIn):
 
 
 def create_report(db: Session, r: schemas.ReportIn):
+    existing = db.query(models.Report).filter(
+        models.Report.title == r.title,
+        models.Report.date == r.date,
+    ).first()
+    if existing:
+        existing.content_md = r.content_md
+        existing.spiders = r.spiders
+        db.commit()
+        db.refresh(existing)
+        return existing
     obj = models.Report(**r.model_dump())
     db.add(obj)
     db.commit()

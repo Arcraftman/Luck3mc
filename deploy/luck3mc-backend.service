@@ -1,0 +1,18 @@
+[Unit]
+Description=Luck3mc FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/steve/PythonC/Luck3mc
+Environment=DB_URL=sqlite:////home/steve/PythonC/Luck3mc/data/backend.db
+Environment=CORS_ORIGINS=https://www.luck3mc.com,https://luck3mc.minecraftaoding.workers.dev,http://localhost:5200
+ExecStart=/home/steve/PythonC/Luck3mc/.luck3mc/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

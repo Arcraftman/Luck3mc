@@ -19,7 +19,7 @@ import logging
 import urllib.error
 import urllib.request
 
-from crawler.utils.config_loader import load_config
+from crawler.utils.backend_connection import get_backend_ingest_token
 
 _LOG = logging.getLogger(__name__)
 
@@ -27,6 +27,9 @@ _ITEM_FIELDS = (
     "title",
     "source_url",
     "pub_date",
+    "pub_datetime",
+    "doc_number",
+    "category",
     "issuing_authority",
     "source_site",
     "content",
@@ -35,20 +38,27 @@ _ITEM_FIELDS = (
 
 
 class BackendSinkPipeline:
-    def __init__(self) -> None:
-        cfg = (load_config().get("backend") or {}) if load_config() else {}
-        self.ingest_url = (cfg.get("ingest_url") or "").rstrip("/")
-        self.token = cfg.get("ingest_token") or ""
-        self.enabled = bool(self.ingest_url) and bool(cfg.get("sink_enabled"))
+    def __init__(self, ingest_url: str, token: str, enabled: bool) -> None:
+        self.ingest_url = ingest_url.rstrip("/")
+        self.token = token
+        self.enabled = bool(self.ingest_url) and enabled
+        self.failed = False
 
     @classmethod
     def from_crawler(cls, crawler):
-        return cls()
+        return cls(
+            crawler.settings.get("BACKEND_INGEST_URL", "http://127.0.0.1:8000"),
+            crawler.settings.get("BACKEND_INGEST_TOKEN") or get_backend_ingest_token(),
+            crawler.settings.getbool("BACKEND_SINK_ENABLED", False),
+        )
 
     def process_item(self, item, spider):
-        if not self.enabled:
+        if not self.enabled or self.failed:
             return item
-        payload = {k: item.get(k) for k in _ITEM_FIELDS}
+        payload = {
+            key: (bool(item.get(key, False)) if key == "subsidy" else item.get(key) or "")
+            for key in _ITEM_FIELDS
+        }
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
             f"{self.ingest_url}/api/ingest/policy",
@@ -60,9 +70,11 @@ class BackendSinkPipeline:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 if resp.status >= 400:
                     _LOG.warning("[backend_sink] ingest HTTP %s", resp.status)
-        except urllib.error.URLError as exc:
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
             _LOG.warning("[backend_sink] ingest failed (%s): %s", self.ingest_url, exc)
+            _LOG.warning("[backend_sink] disabling backend writes for the rest of this crawl")
+            self.failed = True
         return item
