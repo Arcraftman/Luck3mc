@@ -25,5 +25,6 @@ SAVE_HTML = False
 
 ITEM_PIPELINES = {
     "crawler.pipelines.validation.ValidationPipeline": 100,
+    "crawler.pipelines.date_filter.DateFilterPipeline": 150,
     "crawler.pipelines.deduplication.DeduplicatePipeline": 200,
 }

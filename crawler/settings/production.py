@@ -27,6 +27,7 @@ LOG_LEVEL = "INFO"
 # degrades to a no-op (with a warning) when DATABASE_URL is unset.
 ITEM_PIPELINES = {
     "crawler.pipelines.validation.ValidationPipeline": 100,
+    "crawler.pipelines.date_filter.DateFilterPipeline": 150,
     "crawler.pipelines.deduplication.DeduplicatePipeline": 200,
     "crawler.pipelines.notify.NotifyPipeline": 250,
     "crawler.pipelines.storage.JsonLinesExportPipeline": 300,

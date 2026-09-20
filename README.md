@@ -66,7 +66,7 @@ caishui  gaoqi  gongxin  gov_policy_root  kexiao  yanfa
 
 | spider name | 对应分类（YAML 块） | 说明 |
 |-------------|---------------------|------|
-| `gov_policy_root` | `gov_general` | 通用兜底（国务院政策文件库 + 地方政府占位），接 `-a roots=` 可一次性临时扫描 |
+| `gov_policy_root` | `gov_general` | 国务院政策文件库、上海人社局（规范性文件、其他文件、公示公告、政策解读、最新公开信息），接 `-a roots=` 可一次性临时扫描 |
 | `caishui` | `caishui` | 财税政策（财政部各司子站 + 税务总局政策法规库 + 12366） |
 | `gaoqi` | `gaoqi` | 高新技术企业政策（高企认定网 + 国家政务服务平台 + 科技部） |
 | `gongxin` | `gongxin` | 工信政策（**当前为空占位** `roots: []`，待补充） |
@@ -194,35 +194,64 @@ playwright install chromium       # 下载浏览器二进制
 docker compose -f docker-compose.yml run --rm crawler scrapy crawl caishui
 ```
 
-## 日期过滤（只爬指定起点之后）
+## 发布时间过滤（北京时间）
 
-`DateFilterPipeline` 提供两个**正交、可独立开关**的日期闸门（都在 `crawler/settings/base.py` 有默认值，可通过环境变量或 `-s` 覆盖）：
+所有运行环境及上海税务脚本都在去重、通知、存储前执行 `DateFilterPipeline`，
+只保留 `2026-01-01 00:00 ≤ 发布时间 ≤ 本次运行开始时间` 的文件。
 
-| 设置 | 含义 | 默认 |
-|------|------|------|
-| `CRAWL_FROM_DATE` | 丢弃发布日期**早于**该日期的条目（ISO `YYYY-MM-DD`） | `2026-01-01` |
-| `CRAWL_TODAY_ONLY` | 只保留**当天**发布的条目（严格日级巡检用） | `false` |
+时间统一为北京时间（UTC+08:00）。上限在任务启动时固定，不随请求耗时改变；
+`monitor` 的所有爬虫共享同一次运行时间。持久化 URL 去重确保以后运行只保存新发现的文件。
 
-- 两个闸门互不耦合：可只开其一、都开、或都关（都关 = 全量，不过滤）。
-- 解析失败的发布日期**不会被丢弃**（仅 WARNING 保留），避免误删。
-- 阈值由 settings 注入 pipeline，pipeline 自身不写死任何日期——保持解耦。
+`pub_datetime` 保存含时区的发布时间，例如 `2026-09-17T10:30:00+08:00`；
+`pub_date` 继续保存日期以兼容现有数据库和前端。时间只从发布元数据或明确的发布标签提取，
+不使用正文中的发文日期、施行日期或会议日期代替。只有发布日期但没有时分的条目也会保留；
+完全缺少或无法解析发布日期的条目会被排除，原因计入 `date_filter/dropped/*` 并写入日志。
 
-常用场景：
+旧的 `CRAWL_FROM_DATE` / `CRAWL_TODAY_ONLY` 开关已被上述统一规则替代。
+该规则过滤最终输出，获取详情页以识别发布时间仍然可能产生网络请求。
+
+默认启用下载前增量过滤：每个分类启动时一次性读取数据库中的历史 URL，
+扫描列表发现链接后，已采集详情不再下载；列表和分页仍会访问，以发现新文件，
+不会因为遇到一条旧记录就停止翻页。日志统计 `incremental/skipped_known_detail`
+表示省下的详情请求数。无数据库或读取失败时回退到完整扫描。
+如需重新下载已知详情，使用 `-s INCREMENTAL_CRAWL_ENABLED=False`；
+该开关只控制下载前过滤，后续保存阶段的去重仍然生效。
+增量模式按 URL 识别新文件，不检测同一 URL 正文的修改。
 
 ```bash
-# 默认：只保留 2026-01-01 起的政策（历史回溯也只留 2026+）
 scrapy monitor
-
-# 只要今天新发的（严格日级巡检）
-scrapy monitor -s CRAWL_TODAY_ONLY=1
-
-# 自定义起点，例如只要 2025 年以来的
-scrapy crawl caishui -s CRAWL_FROM_DATE=2025-01-01
+scrapy crawl caishui
+.luck3mc/bin/python scripts/crawl_shanghai_tax.py
 ```
 
-> 本项目当前目标为"**只爬 2026 年 1 月 1 日起**"，因此 `CRAWL_FROM_DATE` 全局默认已设为 `2026-01-01`。`monitor` 命令默认尊重该值（不再强制只抓当天），需要当天模式时显式 `-s CRAWL_TODAY_ONLY=1`。
+上海税务脚本仅检查最新文件第一页；全部条目在窗口外时，正常输出 0 条，不视作抓取失败。
 
 ## 统一日志与配置自检
+
+报告按网站（`source_site`）分别选取当日采集数据中最新的 50 条，先按 URL 去重，
+再按发布时间降序排列；不足 50 条则全部选取，不设所有网站合计条数上限。
+每个网站单独调用 DeepSeek 生成摘要，最后合并为带网站标题和原文链接的报告。
+命令行可用 `--max-items-per-site 50` 调整（`--max-items` 为兼容别名，含义同样为每网站上限）。
+
+网站抓取边界：高企网从政策文件、公示公告列表进入；梯度培育平台只跟进
+`/zxqySy/tzggMore` 和 `/zxqySy/tzggView`。站点可在 `gov_categories.yaml`
+中配置 `start_urls`（入口）、`allow_paths`（允许路径正则）和 `detail_paths`
+（详情路径正则）；详情不继续递归，列表只用于发现链接，不作为文件保存。
+
+税务总局官网和政策法规库仅跟进 `/zcfgk/` 下的政策文件及解读；
+官网首页只作政策链接发现入口，新闻、搜索、机构介绍和办税服务链接在请求前过滤。
+
+上海人社局已纳入 `gov_policy_root`，运行 `SCRAPY_ENV=development scrapy monitor`
+会自动包含该站。其静态分页通过 `pagination.total_pattern` 和 `pagination.template`
+发现；日常增量由 `pagination.max_pages: 3` 只扫描各栏目最新 3 页，避免每次重复访问
+上百个历史列表页。发布时间兼容网站使用的特殊冒号，继续按 2026 年起至启动时刻过滤并持久化去重。
+需要人工完整复查历史分页时，可临时运行
+`scrapy crawl gov_policy_root -s INCREMENTAL_ARCHIVE_PAGE_LIMIT=0`。
+
+反爬判断检查 HTTP 状态、标题和正文中的验证提示，不因普通登录框的“验证码”字样
+关闭爬虫。遇到 401/403/429 或明确验证页时，仅暂停该域名的后续请求，其他来源继续。
+已在途的请求可能完成，但该站点的新结果不再处理。统计记录在 `site_guard/blocked/*`。
+重试使用异步等待，仅重试网络故障和配置的状态码，不阻塞其他爬虫。
 
 - **日志按环境分层**：由 `SCRAPY_ENV` 决定（`development`=DEBUG 落盘 / `production`=INFO 落盘 / `testing`=WARNING 不落盘），日志统一写入 `logs/crawler.log` 并同时打印到控制台。入口命令（`scrapy monitor` / `scrapy createdb`）在启动时按当前环境的 `LOG_*` 设置初始化，不写死。
 - **配置自检**：启动时 `crawler/utils/diagnostics.py` 会检查关键环境变量，缺失则打印 `WARNING`，例如：
@@ -265,7 +294,7 @@ scrapy crawl caishui -s CRAWL_FROM_DATE=2025-01-01
 本项目的核心用途之一：**持续巡检这些官网，一旦发现新的政策 URL，就推送到微信**。
 
 ### 工作原理
-1. `scrapy monitor` 命令一次性跑完 `config/*.yaml` 里 `monitor.spiders` 列出的所有分类 spider（默认 5 个：`gov_policy_root` / `caishui` / `gaoqi` / `yanfa` / `kexiao`，`gongxin` 因暂无根而留空）。默认尊重 `CRAWL_FROM_DATE=2026-01-01`，即只保留 2026 年起的政策；需严格当天模式时加 `-s CRAWL_TODAY_ONLY=1`。
+1. `scrapy monitor` 命令一次性跑完 `config/*.yaml` 里 `monitor.spiders` 列出的所有分类 spider（默认 5 个：`gov_policy_root` / `caishui` / `gaoqi` / `yanfa` / `kexiao`，`gongxin` 因暂无根而留空）。按北京时间过滤昨天中午至今天中午的发布时间，同时限制在 2026-01-01 至本次运行开始时间内。
 2. 依赖 `crawled_urls` 去重表做**跨运行**判断：只有数据库里没见过的新 URL 才会被当作"新增"。
 3. 新增条目在经过 `NotifyPipeline`（位于去重管线之后，order 250）时，调用通知器把 `{标题, URL, 发布日期, 来源}` 推送到微信。
 

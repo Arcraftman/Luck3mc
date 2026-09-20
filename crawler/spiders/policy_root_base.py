@@ -42,6 +42,7 @@ import yaml
 from scrapy.exceptions import CloseSpider
 from scrapy.http import HtmlResponse, Request
 from scrapy.linkextractors import LinkExtractor
+from scrapy.link import Link
 from scrapy.spiders import CrawlSpider, Rule
 
 from crawler.items import TaxPolicyItem
@@ -50,12 +51,14 @@ from crawler.utils.loaders import build_loader
 from crawler.utils.policy_classify import (
     NEWS_URL_PATH_FRAGMENTS,
     is_policy_document,
+    is_listing_url,
 )
 from crawler.utils.policy_parse import (
     extract_content,
     extract_doc_number,
     extract_issuing_authority,
     extract_pub_date,
+    extract_pub_datetime,
     extract_title,
 )
 
@@ -79,6 +82,11 @@ class PolicyRootBaseSpider(CrawlSpider):
     # Fallback tag written when a visited domain has no explicit root name.
     source_site: str = ""
 
+    # Do not even schedule links whose URL clearly identifies a pre-2026
+    # archive or document. The DateFilterPipeline remains the authoritative
+    # check because some sites omit the publication year from their URLs.
+    earliest_publication_year = 2026
+
     # Politeness + safety. A broad sweep must stay gentle and bounded, and the
     # same knobs apply to every category spider, so they live here — not copied
     # into each subclass (that duplication was the old "hard-coded" smell).
@@ -94,8 +102,6 @@ class PolicyRootBaseSpider(CrawlSpider):
         "CLOSESPIDER_PAGECOUNT": 3000,   # hard stop so a sweep can't run forever
         "RETRY_TIMES": 2,
         "RETRY_HTTP_CODES": [500, 502, 503, 504, 522, 524, 408, 429],
-        # Keep historical policies under the root (don't restrict to "today").
-        "CRAWL_TODAY_ONLY": False,
         # Don't spam WeChat per-item; the daily report is the WeChat channel.
         "NOTIFY_ENABLED": False,
         "DEFAULT_REQUEST_HEADERS": {"Accept-Language": "zh-CN,zh;q=0.9"},
@@ -114,7 +120,13 @@ class PolicyRootBaseSpider(CrawlSpider):
             raise CloseSpider(reason="no_roots_configured")
 
         self.allowed_domains = sorted({r["domain"] for r in self._roots})
-        self.start_urls = [r["url"] for r in self._roots]
+        self.start_urls = [url for r in self._roots for url in r.get("start_urls", [r["url"]])]
+        self.blocked_domains = set()
+        self._known_documents = set()
+        self._public_paths = {r["domain"]: r["allow_paths"] for r in self._roots
+                              if r.get("allow_paths")}
+        self._detail_paths = {r["domain"]: r["detail_paths"] for r in self._roots
+                              if r.get("detail_paths")}
         # domain -> stable source_site label (from the YAML root name).
         self._domain_to_site = {
             r["domain"]: r.get("name", self.source_site or self.category)
@@ -200,6 +212,8 @@ class PolicyRootBaseSpider(CrawlSpider):
                 "url": url,
                 "domain": r.get("domain") or p.netloc,
                 "js": bool(r.get("js")),
+                **{key: r[key] for key in ("start_urls", "allow_paths", "detail_paths", "pagination")
+                   if key in r},
             })
         return resolved
 
@@ -236,39 +250,176 @@ class PolicyRootBaseSpider(CrawlSpider):
         ``js: true`` in YAML) with ``meta["playwright"]`` so the optional
         scrapy-playwright download handler serves them.
         """
+        self._load_known_documents()
         for url in self.start_urls:
             req = Request(url, dont_filter=True)
             if self._domain_of(url) in self._js_domains:
                 req.meta["playwright"] = True
             yield req
 
+    def _load_known_documents(self):
+        """Read the existing ledger once; never query the DB per discovered link."""
+        self._known_documents.clear()
+        if not self.crawler.settings.getbool("INCREMENTAL_CRAWL_ENABLED", True):
+            return
+        database_url = self.crawler.settings.get("DATABASE_URL")
+        if not database_url:
+            return
+        from sqlalchemy import select
+        from crawler.db.models import CrawledUrl
+        from crawler.db.session import get_engine
+
+        engine = None
+        try:
+            engine = get_engine(database_url)
+            with engine.connect() as connection:
+                rows = connection.execute(select(CrawledUrl.url, CrawledUrl.source_site).where(
+                    CrawledUrl.source_site.in_(set(self._domain_to_site.values()))
+                ))
+                self._known_documents = {(url, site) for url, site in rows}
+            self.crawler.stats.set_value("incremental/known_documents", len(self._known_documents))
+            self.logger.info("[incremental] 已加载 %d 条历史记录，下载前跳过已采集详情，继续扫描列表。",
+                             len(self._known_documents))
+        except Exception:
+            # A missing/unavailable ledger must never prevent discovery.
+            self.logger.warning("[incremental] 无法读取历史记录，本次回退到完整扫描。")
+            self.crawler.stats.inc_value("incremental/ledger_unavailable")
+        finally:
+            if engine is not None:
+                engine.dispose()
+
+    def _already_collected(self, url):
+        if url in self.start_urls or is_listing_url(url):
+            return False
+        domain = self._domain_of(url)
+        patterns = self._detail_paths.get(domain)
+        if patterns and not any(re.search(p, urlparse(url).path) for p in patterns):
+            return False
+        return (url, self._domain_to_site.get(domain, self.source_site or self.category)) in self._known_documents
+
     def process_request(self, request, response):
-        """Rule-followed links on JS-only domains also need Playwright."""
+        """Reject explicit old archives, then tag JS-only requests."""
+        # Details should not recursively lead into navigation/related articles.
+        patterns = self._detail_paths.get(self._domain_of(response.url), [])
+        if any(re.search(pattern, urlparse(response.url).path) for pattern in patterns):
+            return None
+        if not self.is_public_url(request.url):
+            return None
+        if self._already_collected(request.url):
+            self.crawler.stats.inc_value("incremental/skipped_known_detail")
+            return None
+        if self._is_explicitly_old_url(request.url):
+            self.crawler.stats.inc_value("request_filter/dropped_pre_2026_url")
+            return None
         if self._domain_of(request.url) in self._js_domains:
             request.meta["playwright"] = True
         return request
 
+    def _requests_to_follow(self, response):
+        yield from super()._requests_to_follow(response)
+        if not isinstance(response, HtmlResponse):
+            return
+        # Some static archives expose their page count only in a JS widget.
+        # Discover sibling pages from the configured entry, without executing JS.
+        for root in self._roots:
+            pagination = root.get("pagination")
+            if not pagination or response.url not in root.get("start_urls", []):
+                continue
+            match = re.search(pagination["total_pattern"], response.text)
+            if not match:
+                continue
+            total_pages = int(match.group(1))
+            default_limit = int(pagination.get("max_pages", total_pages))
+            settings = getattr(self.crawler, "settings", None)
+            configured_limit = (
+                settings.getint("INCREMENTAL_ARCHIVE_PAGE_LIMIT", default_limit)
+                if settings is not None else default_limit
+            )
+            max_pages = total_pages if configured_limit <= 0 else configured_limit
+            scheduled_pages = min(total_pages, max_pages)
+            if scheduled_pages < total_pages:
+                self.crawler.stats.inc_value(
+                    "incremental/skipped_archive_pages", total_pages - scheduled_pages
+                )
+                self.logger.info(
+                    "[incremental] %s 共 %d 页，本次只扫描最新 %d 页。",
+                    response.url, total_pages, scheduled_pages,
+                )
+            for page in range(2, scheduled_pages + 1):
+                url = response.urljoin(pagination["template"].format(page=page))
+                request = self._build_request(0, Link(url))
+                # Newer archive pages and document details run before old pages.
+                request.priority = -page
+                request = self.process_request(request, response)
+                if request is not None:
+                    yield request
+
     # ------------------------------------------------------------------ #
     def process_links(self, links):
-        """Drop external links and obvious news paths before enqueuing."""
+        """Drop external, news, and explicit pre-2026 links before scheduling."""
         kept = []
         for link in links:
+            if not self.is_public_url(link.url):
+                continue
             netloc = self._domain_of(link.url)
             if netloc and netloc not in self.allowed_domains:
                 continue
             if any(frag in link.url.lower() for frag in NEWS_URL_PATH_FRAGMENTS):
                 continue
+            if self._is_explicitly_old_url(link.url):
+                self.crawler.stats.inc_value("request_filter/dropped_pre_2026_url")
+                continue
             kept.append(link)
         return kept
+
+    def is_public_url(self, url):
+        domain = self._domain_of(url)
+        if domain in self.blocked_domains:
+            return False
+        patterns = self._public_paths.get(domain)
+        return not patterns or any(re.search(p, urlparse(url).path) for p in patterns)
+
+    def block_site(self, requested_url, final_url=None):
+        domain = self._domain_of(requested_url)
+        if domain not in self.blocked_domains:
+            self.blocked_domains.add(domain)
+            self.crawler.stats.inc_value(f"site_guard/blocked/{domain}")
+            self.logger.warning("[site-guard] 暂停本站，其他来源继续: %s -> %s",
+                                domain, final_url or requested_url)
+
+    def _is_explicitly_old_url(self, url: str) -> bool:
+        """Whether a URL clearly belongs to an archive before 2026.
+
+        Government sites commonly encode years as ``/2025/``, ``/202509/``
+        or suffixes such as ``qtwj2014``. If multiple years occur, use the
+        newest one so a 2026 document referring to an older law is retained.
+        URLs without a recognisable year must still be fetched and verified
+        from their publication metadata by ``DateFilterPipeline``.
+        """
+        path = urlparse(url).path
+        standalone = [int(value) for value in re.findall(
+            r"(?<!\d)((?:19|20)\d{2})(?!\d)", path
+        )]
+        compact = [int(value) for value in re.findall(
+            r"(?<!\d)((?:19|20)\d{2})\d{2}(?:\d{2})?(?!\d)", path
+        )]
+        years = standalone + compact
+        return bool(years) and max(years) < self.earliest_publication_year
 
     def parse_page(self, response):
         """Classify and extract a visited page as a policy document (or skip)."""
         if not isinstance(response, HtmlResponse):
             return
 
-        if is_compliance_blocked(response.text or ""):
-            self.logger.warning("[合规守卫] 命中反爬页，停止: %s", response.url)
-            raise CloseSpider(reason="waf_blocked_compliance")
+        if self._domain_of(response.url) in self.blocked_domains:
+            return
+        if is_compliance_blocked(response.text or "", response.status):
+            self.block_site(response.url)
+            return
+
+        patterns = self._detail_paths.get(self._domain_of(response.url))
+        if patterns and not any(re.search(p, urlparse(response.url).path) for p in patterns):
+            return
 
         url = response.url
         title = extract_title(response)
@@ -289,7 +440,10 @@ class PolicyRootBaseSpider(CrawlSpider):
         loader.add_value("title", title)
         loader.add_value("content", text)
 
-        pub_date = extract_pub_date(response)
+        pub_datetime = extract_pub_datetime(response)
+        if pub_datetime:
+            loader.add_value("pub_datetime", pub_datetime)
+        pub_date = pub_datetime[:10] if pub_datetime else extract_pub_date(response)
         if pub_date:
             loader.add_value("pub_date", pub_date)
         doc_number = extract_doc_number(response)

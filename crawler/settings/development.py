@@ -25,6 +25,7 @@ LOG_LEVEL = "DEBUG"
 # Local filesystem output is fine for dev.
 ITEM_PIPELINES = {
     "crawler.pipelines.validation.ValidationPipeline": 100,
+    "crawler.pipelines.date_filter.DateFilterPipeline": 150,
     "crawler.pipelines.deduplication.DeduplicatePipeline": 200,
     "crawler.pipelines.notify.NotifyPipeline": 250,
     "crawler.pipelines.storage.JsonLinesExportPipeline": 300,

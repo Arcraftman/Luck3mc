@@ -13,6 +13,7 @@ Two modes, selected automatically:
 import hashlib
 
 from itemadapter import ItemAdapter
+from scrapy.exceptions import DropItem
 from sqlalchemy import select
 
 from crawler.db.models import CrawledUrl
@@ -65,7 +66,7 @@ class DeduplicatePipeline:
             if fp in self.seen:
                 self.duplicates += 1
                 spider.logger.debug("Skipping duplicate: %s", adapter.get("source_url"))
-                return None
+                raise DropItem("Duplicate item")
             self.seen.add(fp)
             return item
 
@@ -85,9 +86,11 @@ class DeduplicatePipeline:
             if exists is not None:
                 self.duplicates += 1
                 spider.logger.debug("Skipping already-crawled URL: %s", url)
-                return None
+                raise DropItem("Already-crawled URL")
             session.add(CrawledUrl(url=url, source_site=source_site))
             session.commit()
+        except DropItem:
+            raise
         except Exception as exc:  # noqa: BLE001 - on DB error, keep the item
             session.rollback()
             spider.logger.error("DeduplicatePipeline DB error: %s", exc)

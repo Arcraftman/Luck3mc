@@ -1,6 +1,8 @@
 """Unit tests for the validation and de-duplication pipelines."""
 
 import logging
+import pytest
+from scrapy.exceptions import DropItem
 
 from crawler.items import TaxPolicyItem
 from crawler.pipelines.deduplication import DeduplicatePipeline
@@ -44,8 +46,8 @@ def test_dedup_in_memory_drops_duplicate():
     first = p.process_item(_policy_item("https://x.com/a"), FakeSpider())
     assert first is not None
 
-    second = p.process_item(_policy_item("https://x.com/a"), FakeSpider())
-    assert second is None  # duplicate dropped
+    with pytest.raises(DropItem):
+        p.process_item(_policy_item("https://x.com/a"), FakeSpider())
     assert p.duplicates == 1
 
 

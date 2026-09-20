@@ -25,6 +25,7 @@ import datetime
 import glob
 import json
 import os
+from collections import defaultdict, Counter
 from pathlib import Path
 
 from crawler.config import get_settings
@@ -56,6 +57,7 @@ SYSTEM_PROMPT = """你是一名资深的财税与产业政策分析助手。下�
 3. 标注与企业/个人最相关的可操作要点（申报条件、补贴标准、时限等）。
 4. 语言精炼、客观，适合微信推送阅读，全文控制在 900 字以内。
 5. 不编造原文没有的信息；信息不足时如实说明。
+6. 覆盖输入中的各个来源，按对应政策主题归类，不要仅总结某一个来源。
 只输出 Markdown 正文，不要任何额外解释。"""
 
 
@@ -83,11 +85,11 @@ def _load_dotenv() -> None:
 def collect_items(
     date_str: str,
     spiders: list[str] | None = None,
-    max_items: int = 30,
+    max_items: int = 50,
     max_chars: int = 1200,
     data_dir: str | Path | None = None,
 ) -> list[dict]:
-    """Read ``data/<spider>/<date>.jsonl`` and return policy item dicts.
+    """Read daily JSONL, selecting up to max_items newest records per source site.
 
     Pure / read-only: never writes, never touches the network. The returned
     dicts carry ``spider / title / url / pub_date / authority / content`` so the
@@ -95,6 +97,9 @@ def collect_items(
     """
     base = Path(data_dir) if data_dir else get_settings().data_dir
     items: list[dict] = []
+    seen = set()
+    if max_items <= 0:
+        return []
     pattern = os.path.join(str(base), "*", f"{date_str}.jsonl")
     for path in sorted(glob.glob(pattern)):
         spider = os.path.basename(os.path.dirname(path))
@@ -109,18 +114,35 @@ def collect_items(
                     d = json.loads(line)
                 except Exception:
                     continue
+                if not isinstance(d, dict):
+                    continue
+                url = d.get("source_url") or ""
+                if url and url in seen:
+                    continue
+                if url:
+                    seen.add(url)
+                source = d.get("source_site") or spider
+                source_name = {"shanghai_rsj": "上海市人力资源和社会保障局"}.get(source, source)
                 content = (d.get("content") or "")[:max_chars]
                 items.append({
                     "spider": spider,
+                    "source_site": source,
+                    "source_name": source_name,
                     "title": d.get("title") or "",
                     "url": d.get("source_url") or "",
                     "pub_date": str(d.get("pub_date") or ""),
-                    "authority": d.get("issuing_authority") or d.get("source_site") or "",
+                    "authority": d.get("issuing_authority") or source_name,
                     "content": content,
                 })
-                if len(items) >= max_items:
-                    return items
-    return items
+    groups = defaultdict(list)
+    for item in items:
+        groups[item["source_site"]].append(item)
+    selected = []
+    for _, group in sorted(groups.items()):
+        selected.extend(sorted(group, key=lambda i: i["pub_date"], reverse=True)[:max_items])
+    logger.info("报告来源分配：%s（采集 %d 条，入选 %d 条，每网站上限 %d）",
+                dict(Counter(i["source_name"] for i in selected)), len(items), len(selected), max_items)
+    return selected
 
 
 def build_user_content(items: list[dict]) -> str:
@@ -128,7 +150,7 @@ def build_user_content(items: list[dict]) -> str:
     blocks = []
     for i, it in enumerate(items, 1):
         blocks.append(
-            f"【政策{i}】\n标题：{it['title']}\n发布机关：{it['authority']}\n"
+            f"【政策{i}】\n来源：{it.get('source_name', it['authority'])}\n标题：{it['title']}\n发布机关：{it['authority']}\n"
             f"发布日期：{it['pub_date']}\n原文链接：{it['url']}\n正文：{it['content']}"
         )
     return "\n\n".join(blocks)
@@ -193,6 +215,19 @@ def build_links_section(items: list[dict]) -> str:
             line += f" ｜ {meta}"
         lines.append(line)
     return "\n".join(lines)
+
+
+def generate_site_summaries(items: list[dict]) -> str:
+    """Summarise each source separately so the total input cannot crowd out sites."""
+    groups = defaultdict(list)
+    for item in items:
+        groups[item.get("source_site") or item["spider"]].append(item)
+    reports = []
+    for site, group in groups.items():
+        name = group[0].get("source_name") or site
+        logger.info("正在生成网站报告：%s（%d 条）", name, len(group))
+        reports.append(f"## {name}（{len(group)} 条）\n\n" + call_deepseek(group))
+    return "\n\n".join(reports)
 
 
 def _build_notifier():
@@ -327,7 +362,7 @@ def push_report_to_backend(
 def run(
     date_str: str | None = None,
     spiders: list[str] | None = None,
-    max_items: int = 30,
+    max_items: int = 50,
     no_push: bool = False,
     out: str | None = None,
     no_save: bool = False,
@@ -354,8 +389,11 @@ def run(
         return {"items": 0, "date": date_str, "markdown": None, "pushed": None, "out": None}
 
     logger.info("读取 %d 条政策原文，调用 DeepSeek 生成报告…", len(items))
-    report = call_deepseek(items)
-    full_md = report + build_links_section(items)
+    report = generate_site_summaries(items)
+    coverage = "\n\n## 本次摘要来源\n\n" + "\n".join(
+        f"- {source}：{count} 条" for source, count in
+        Counter(i.get("source_name", i["authority"]) for i in items).items())
+    full_md = report + coverage + build_links_section(items)
     title = f"政策日报 {date_str}"
 
     # Always materialise the report as ``report_<date>.md`` (unless --no-save):

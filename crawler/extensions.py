@@ -31,3 +31,10 @@ class StatsLoggingExtension:
             self.stats.get_value("response_received_count", 0),
             self.stats.get_value("spider_exceptions_count", 0),
         )
+        skipped = self.stats.get_value("incremental/skipped_known_detail", 0)
+        if skipped:
+            self.logger.info("Spider '%s': 下载前跳过 %d 个已采集详情链接。", spider.name, skipped)
+        archive_pages = self.stats.get_value("incremental/skipped_archive_pages", 0)
+        if archive_pages:
+            self.logger.info("Spider '%s': 增量模式跳过 %d 个历史列表页。",
+                             spider.name, archive_pages)

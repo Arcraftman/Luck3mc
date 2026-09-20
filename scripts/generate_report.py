@@ -37,8 +37,8 @@ def main() -> None:
                     help="统计日期（默认今天）")
     ap.add_argument("--spiders", nargs="*", default=None,
                     help="只聚合指定 spider 目录（默认全部）")
-    ap.add_argument("--max-items", type=int, default=30,
-                    help="最多读取的条目数（默认 30）")
+    ap.add_argument("--max-items-per-site", "--max-items", dest="max_items", type=int, default=50,
+                    help="每个网站最多选取的条目数，按发布日期从新到旧（默认 50）")
     ap.add_argument("--no-push", action="store_true",
                     help="只生成报告，不推送")
     ap.add_argument("--no-save", action="store_true",

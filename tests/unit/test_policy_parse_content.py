@@ -44,3 +44,16 @@ def test_extract_content_excludes_nav_footer_chrome():
     # Nav / footer chrome should not dominate the extracted body.
     assert "首页" not in text
     assert "版权所有" not in text
+
+
+def test_trs_editor_wins_over_outer_container_and_excludes_scripts():
+    response = HtmlResponse(
+        url="https://example.gov.cn/policy.html",
+        body="""<html><body><div id="main">
+        <h1>通知</h1><script>function laiyuan(){}</script>
+        <div class="TRS_Editor"><p>政策正文。</p>
+        <script>tracking()</script><style>.hidden{display:none}</style></div>
+        <div>相关链接和页面操作</div></div></body></html>""".encode(),
+        encoding="utf-8",
+    )
+    assert extract_content(response).strip() == "政策正文。"

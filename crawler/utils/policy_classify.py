@@ -92,6 +92,7 @@ POLICY_URL_PATH_FRAGMENTS: list[str] = [
     "/zc/",          # 政策（缩写）
     "/policy/",
     "/policies/",
+    "/tzcjd_",       # 政策解读栏目（包含政策问答）
     "/document",
     "/doc/",
     "/flfg/",        # 法律法规
@@ -132,6 +133,8 @@ DOC_TITLE_KEYWORDS: list[str] = [
     "规程",
     "暂行",
     "印发",
+    "政策问答",
+    "政策解读",
 ]
 
 # Body markers that only appear inside a real normative document.
@@ -224,7 +227,7 @@ def is_policy_document(
         title keyword) only need an 80-char stub check, because a real detail
         page can be short even when our extractor grabs little prose.
     """
-    if is_news(url, title):
+    if is_listing_url(url) or is_news(url, title):
         return False
     doc_title = any(kw in (title or "") for kw in DOC_TITLE_KEYWORDS)
     detail = _looks_like_detail(url)
@@ -238,6 +241,17 @@ def is_policy_document(
         return False
     threshold = 80 if strong else min_content_len
     return len((text or "").strip()) >= threshold
+
+
+def is_listing_url(url: str) -> bool:
+    """Recognise index/list endpoints even when titles contain 公告/通知."""
+    from urllib.parse import urlparse
+
+    path = urlparse(url).path.lower()
+    basename = path.rsplit("/", 1)[-1]
+    return (not basename or bool(re.match(
+        r"(?:index|list|list_[\w-]+|index_\d+)(?:\.(?:s?html?|aspx?|jsp))?$", basename
+    )) or basename in {"tzggmore", "main"})
 
 
 # A real detail page ends in a document file extension, or carries a known

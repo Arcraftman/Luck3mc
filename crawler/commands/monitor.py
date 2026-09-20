@@ -24,11 +24,21 @@ from scrapy.commands import ScrapyCommand  # type: ignore
 
 # Import CrawlerProcess inside run() to avoid importing Twisted/reactor at
 # module import time (and to avoid static analysis issues in some editors).
-from scrapy.utils.project import get_project_settings  # type: ignore
 
 from crawler.utils.load_diagnostics import check_config  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_database_schema(database_url: str) -> None:
+    """Create missing crawler tables before concurrent spiders start."""
+    from crawler.db import get_engine, init_db
+
+    engine = get_engine(database_url)
+    try:
+        init_db(engine)
+    finally:
+        engine.dispose()
 
 
 class Command(ScrapyCommand):
@@ -42,7 +52,7 @@ class Command(ScrapyCommand):
         return "Run one monitoring pass + push the consolidated .md report"
 
     def run(self, args, opts):
-        settings = get_project_settings()
+        settings = self.settings.copy()
 
         from crawler.utils.log_config import init_logging
         init_logging()
@@ -58,12 +68,9 @@ class Command(ScrapyCommand):
         if "NOTIFY_ENABLED" not in settings:
             settings.set("NOTIFY_ENABLED", False)
 
-        # Only surface items published *today* — never the historical backlog.
-        # This keeps the daily pass clean on its very first run. Operators who
-        # deliberately want the full history can opt out with
-        # ``-s CRAWL_TODAY_ONLY=0``.
-        if "CRAWL_TODAY_ONLY" not in settings:
-            settings.set("CRAWL_TODAY_ONLY", True)
+        from crawler.utils.publication_time import BEIJING
+        settings.set("CRAWL_RUN_AT", datetime.datetime.now(BEIJING).isoformat(),
+                     priority="cmdline")
 
         spiders = list(settings.get("MONITOR_SPIDERS") or [])
         if not spiders:
@@ -75,6 +82,14 @@ class Command(ScrapyCommand):
                 "No DATABASE_URL: de-dup is in-memory, so every monitor run "
                 "will re-process items. Run `scrapy createdb`."
             )
+        else:
+            # Local invocations do not pass through docker-entrypoint.sh, so
+            # an existing but empty SQLite file used to look "connected" and
+            # then fail every dedup query with "no such table". Create the ORM
+            # schema once before the five crawlers open concurrent sessions.
+            # create_all is idempotent for an already-initialised database.
+            ensure_database_schema(settings.get("DATABASE_URL"))
+            logger.info("monitor: database schema is ready")
 
         logger.info(
             "monitor: starting pass over %d spiders: %s", len(spiders), spiders

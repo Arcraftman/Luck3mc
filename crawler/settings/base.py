@@ -98,6 +98,8 @@ DOWNLOADER_MIDDLEWARES = {
     "crawler.middlewares.user_agent.RandomUserAgentMiddleware": 400,
     "crawler.middlewares.proxy.ProxyMiddleware": 500,
     "crawler.middlewares.retry.PoliteRetryMiddleware": 550,
+    # Inspect decompressed bodies (HttpCompression=590) before retry (550).
+    "crawler.middlewares.site_guard.SiteGuardMiddleware": 580,
     "scrapy.downloadermiddlewares.retry.RetryMiddleware": None,  # replaced
 }
 
@@ -119,16 +121,11 @@ LOG_DATEFORMAT = "%Y-%m-%d %H:%M:%S"
 LOG_FILE = str(LOGS_DIR / f"{BOT_NAME}.log")
 
 # ---------------------------------------------------------------------------
-# Date gating for crawled items (consumed by DateFilterPipeline)
-# ---------------------------------------------------------------------------
-# CRAWL_TODAY_ONLY: keep only *today*'s items (the scheduled daily pass).
-# CRAWL_FROM_DATE: drop items published before this date (ISO ``YYYY-MM-DD``).
-#   e.g. "2026-01-01" => only keep policies from 2026 onward. Empty = no floor.
-# The two are orthogonal: set either, both, or neither. The pipeline reads
-# them from settings, so the threshold stays decoupled from the gate logic.
-CRAWL_TODAY_ONLY = os.environ.get("CRAWL_TODAY_ONLY", "false").lower() in ("1", "true", "yes")
-CRAWL_FROM_DATE = os.environ.get("CRAWL_FROM_DATE", "2026-01-01")
-
+# Publication filtering is always enabled in all environments:
+# Asia/Shanghai, [2026-01-01 00:00, run start]. Date-only values are accepted;
+# missing or invalid publication dates are dropped.
+# CRAWL_RUN_AT is frozen by monitor for every spider in the same pass;
+# individual crawls freeze it when their date filter is created.
 # ---------------------------------------------------------------------------
 # Feed / export defaults (used when a spider yields without a pipeline sink)
 # ---------------------------------------------------------------------------

@@ -27,6 +27,7 @@ class TaxPolicyItem(scrapy.Item):
         input_processor=MapCompose(clean_text),
         output_processor=TakeFirst(),
     )
+    pub_datetime = scrapy.Field(output_processor=TakeFirst())
     pub_date = scrapy.Field(
         input_processor=MapCompose(parse_pub_date),
         output_processor=TakeFirst(),
@@ -61,6 +62,7 @@ class TaxAnnouncementItem(scrapy.Item):
         input_processor=MapCompose(clean_text),
         output_processor=TakeFirst(),
     )
+    pub_datetime = scrapy.Field(output_processor=TakeFirst())
     pub_date = scrapy.Field(
         input_processor=MapCompose(parse_pub_date),
         output_processor=TakeFirst(),
@@ -91,6 +93,7 @@ class TaxNewsItem(scrapy.Item):
         input_processor=MapCompose(clean_text),
         output_processor=TakeFirst(),
     )
+    pub_datetime = scrapy.Field(output_processor=TakeFirst())
     pub_date = scrapy.Field(
         input_processor=MapCompose(parse_pub_date),
         output_processor=TakeFirst(),

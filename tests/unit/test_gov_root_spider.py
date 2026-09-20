@@ -1,6 +1,9 @@
 """Tests for the generic gov_policy_root spider's page classifier/extractor."""
 
-from scrapy.http import HtmlResponse
+from types import SimpleNamespace
+
+from scrapy.http import HtmlResponse, Request
+from scrapy.link import Link
 
 from crawler.spiders.gov_policy.root_spider import GovPolicyRootSpider
 
@@ -65,3 +68,39 @@ def test_parse_page_ignores_non_html():
 
     resp = Response(url="https://www.gov.cn/zhengce/2026-08/content_3.pdf")
     assert list(spider.parse_page(resp)) == []
+
+
+def test_process_links_drops_explicit_pre_2026_archives():
+    spider = GovPolicyRootSpider()
+    spider.crawler = SimpleNamespace(
+        stats=type("Stats", (), {"inc_value": lambda self, key: None})()
+    )
+    links = [
+        Link("https://www.gov.cn/zhengce/2025/content_1.htm"),
+        Link("https://www.gov.cn/zhengce/202509/content_2.htm"),
+        Link("https://www.gov.cn/zhengce/qtwj2014/content_3.htm"),
+        Link("https://www.gov.cn/zhengce/2026/content_4.htm"),
+        Link("https://www.gov.cn/zhengce/latest/content_5.htm"),
+    ]
+    assert [link.url for link in spider.process_links(links)] == [
+        "https://www.gov.cn/zhengce/2026/content_4.htm",
+        "https://www.gov.cn/zhengce/latest/content_5.htm",
+    ]
+
+
+def test_current_url_with_old_reference_is_not_dropped():
+    spider = GovPolicyRootSpider()
+    assert not spider._is_explicitly_old_url(
+        "https://www.gov.cn/zhengce/2026/revising-rule-2016.html"
+    )
+
+
+def test_process_request_rejects_old_url_before_download():
+    spider = GovPolicyRootSpider()
+    spider.crawler = SimpleNamespace(
+        stats=type("Stats", (), {"inc_value": lambda self, key: None})()
+    )
+    response = _response("https://www.gov.cn/zhengce/", _LISTING_HTML)
+    assert spider.process_request(
+        Request("https://www.gov.cn/zhengce/2024/content_1.htm"), response
+    ) is None

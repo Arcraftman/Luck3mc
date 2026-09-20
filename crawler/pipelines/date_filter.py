@@ -1,92 +1,63 @@
-"""Date-based item gating.
-
-Two orthogonal, independently-configurable gates (both off by default so the
-pipeline is a no-op unless explicitly enabled):
-
-* ``CRAWL_TODAY_ONLY`` — keep only items published *today* (used by the
-  scheduled daily ``monitor`` pass so the historical backlog never floods the
-  report on the first run).
-* ``CRAWL_FROM_DATE`` — drop items published *before* this date (e.g.
-  ``2026-01-01``). Used for a "only keep policies from date X onward" sweep.
-
-Items without a parseable ``pub_date`` are **kept** (with a warning) so a
-spider that fails to extract a date can never silently discard everything.
-The gate logic here is the single source of truth; the thresholds are injected
-from settings, so this module stays decoupled from any specific policy date.
-"""
-
-from __future__ import annotations
-
-from datetime import date
+"""Keep publications from 2026-01-01 through the frozen run start time."""
+from datetime import date, datetime
 
 from itemadapter import ItemAdapter
+from scrapy.exceptions import DropItem
 
-
-def _parse_pub_date(pub) -> date | None:
-    """Best-effort parse of ``pub_date`` into a ``date``; None if unparseable."""
-    if pub is None:
-        return None
-    if hasattr(pub, "date"):  # datetime / date instance
-        return pub.date() if hasattr(pub, "year") is False else pub
-    if isinstance(pub, date):
-        return pub
-    try:
-        return date.fromisoformat(str(pub)[:10])
-    except (ValueError, TypeError):
-        return None
+from crawler.utils.publication_time import BEIJING, parse_publication_time
 
 
 class DateFilterPipeline:
-    """Drop items that fall outside the configured date window."""
+    """Apply the global publication range before deduplication and storage."""
 
-    def __init__(self, crawl_today_only: bool = False, crawl_from_date: str = ""):
-        self.crawl_today_only = crawl_today_only
-        # Parse the lower-bound date once at construction; invalid values
-        # degrade to "no lower bound" (with a warning via the spider later).
-        self.from_date = _parse_pub_date(crawl_from_date) if crawl_from_date else None
+    def __init__(self, run_at=None, stats=None):
+        self.run_at = parse_publication_time(run_at or datetime.now(BEIJING))
+        if self.run_at is None:
+            raise ValueError("CRAWL_RUN_AT must contain a valid date and time")
+        self.floor = datetime(2026, 1, 1, tzinfo=BEIJING)
+        self.stats = stats
 
     @classmethod
     def from_crawler(cls, crawler):
-        return cls(
-            crawler.settings.getbool("CRAWL_TODAY_ONLY", False),
-            crawler.settings.get("CRAWL_FROM_DATE", "") or "",
+        return cls(crawler.settings.get("CRAWL_RUN_AT"), crawler.stats)
+
+    def open_spider(self, spider):
+        spider.logger.info(
+            "[date-filter] Beijing publication range [%s, %s]",
+            self.floor.isoformat(), self.run_at.isoformat(),
         )
 
     def process_item(self, item, spider):
-        if not self.crawl_today_only and self.from_date is None:
-            return item
-
         adapter = ItemAdapter(item)
-        pub = adapter.get("pub_date")
-        if not pub:
-            spider.logger.warning(
-                "[date-filter] 无发布日期, 保留(未丢弃): %s",
-                adapter.get("source_url") or adapter.get("title"),
+        precise_value = adapter.get("pub_datetime")
+        date_value = adapter.get("pub_date")
+        published = parse_publication_time(precise_value)
+        reason = None
+        display_value = precise_value or date_value
+
+        if published is not None:
+            if published < self.floor:
+                reason = "before_2026"
+            elif published > self.run_at:
+                reason = "future_publication"
+        else:
+            try:
+                published_date = date.fromisoformat(str(date_value)[:10])
+            except (TypeError, ValueError):
+                published_date = None
+            if published_date is None:
+                reason = "missing_or_unparseable_date"
+            elif published_date < self.floor.date():
+                reason = "before_2026"
+            elif published_date > self.run_at.date():
+                reason = "future_publication"
+        if reason:
+            if self.stats:
+                self.stats.inc_value(f"date_filter/dropped/{reason}")
+            raise DropItem(
+                f"[date-filter] {reason}: {display_value!r} "
+                f"{adapter.get('source_url', '')}"
             )
-            return item
-
-        pub_d = _parse_pub_date(pub)
-        if pub_d is None:
-            spider.logger.warning("[date-filter] 发布日期无法解析 %r, 保留", pub)
-            return item
-
-        # Gate 1: today-only
-        if self.crawl_today_only and pub_d != date.today():
-            spider.logger.info(
-                "[date-filter] 丢弃非当天数据 (%s): %s",
-                pub_d,
-                adapter.get("source_url") or adapter.get("title"),
-            )
-            return None
-
-        # Gate 2: lower-bound (keep >= from_date)
-        if self.from_date is not None and pub_d < self.from_date:
-            spider.logger.info(
-                "[date-filter] 丢弃早于 %s 的数据 (%s): %s",
-                self.from_date.isoformat(),
-                pub_d,
-                adapter.get("source_url") or adapter.get("title"),
-            )
-            return None
-
+        if self.stats:
+            self.stats.inc_value("date_filter/accepted")
         return item

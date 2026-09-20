@@ -30,6 +30,26 @@ categories:
       - name: gov_zhengce
         url: https://www.gov.cn/zhengce/
         domain: www.gov.cn
+      - name: shanghai_rsj
+        url: https://rsj.sh.gov.cn/
+        domain: rsj.sh.gov.cn
+        start_urls:
+          - https://rsj.sh.gov.cn/tgwgfx_17726/index.html
+          - https://rsj.sh.gov.cn/tgwqt_17736/index.html
+          - https://rsj.sh.gov.cn/tgsgg_17341/index.html
+          - https://rsj.sh.gov.cn/tzcjd_17351/index.html
+          - https://rsj.sh.gov.cn/tzxgkxx_17197/index.html
+        allow_paths:
+          - '^/(?:tgwgfx_17726|tgwqt_17736|tgsgg_17341|tzcjd_17351|tzxgkxx_17197)/index(?:_\d+)?\.html$'
+          - '^/(?:tzcjd_17352_17352|tzxgkxx_17197)/20\d{6}/[^/]+\.html$'
+          - '^/(?:tjypx_17728|tshbx_17729|trsrc_17730|tldgx_17731|tgzfl_17732|tqt_17733|tjypx_17737|tshbx_17738|trsrc_17739|tldgx_17740|tgzfl_17741|tqt_17742|tgsgg_17341)/20\d{6}/[^/]+\.html$'
+        detail_paths:
+          - '^/[^/]+/20\d{6}/[^/]+\.html$'
+        pagination:
+          total_pattern: 'totalPage\s*:\s*(\d+)'
+          template: 'index_{page}.html'
+          # 日常增量只检查最新 3 页；历史详情已入库，无需每次扫描 131 页。
+          max_pages: 3
       # 上海市政府 · 政策文件栏目（示例占位，请替换成真实根地址后取消注释）
       # 去 www.shanghai.gov.cn 找「政策文件 / 市政府文件 / 政府公报」栏目，
       # 复制其栏目首页 URL 作为 url，并把 domain 改成对应域名。
@@ -82,12 +102,21 @@ categories:
       - name: chinatax_fgk   # 国家税务总局政策法规库
         url: https://fgk.chinatax.gov.cn/zcfgk
         domain: fgk.chinatax.gov.cn
+        allow_paths:
+          - '^/zcfgk(?:/|$)'
+        detail_paths:
+          - '^/zcfgk/c\d+/c\d+/content\.html$'
       - name: mof_fgk        # 财政部财政法规管理系统
         url: https://fgk.mof.gov.cn/
         domain: fgk.mof.gov.cn
       - name: chinatax_www   # 国家税务总局官网
         url: https://www.chinatax.gov.cn/
         domain: www.chinatax.gov.cn
+        # 首页仅发现政策链接；禁止向新闻、搜索、机构和办税服务栏目扩散。
+        allow_paths:
+          - '^/zcfgk(?:/|$)'
+        detail_paths:
+          - '^/zcfgk/c\d+/c\d+/content\.html$'
       - name: chinatax_12366 # 12366 纳税服务平台（JS 渲染，需 Playwright）
         url: https://12366.chinatax.gov.cn/sscx/
         domain: 12366.chinatax.gov.cn
@@ -103,6 +132,14 @@ categories:
       - name: innocom_gqrdw   # 高新技术企业认定管理工作网 · 高企认定栏目
         url: http://www.innocom.gov.cn/gqrdw/
         domain: www.innocom.gov.cn
+        start_urls:
+          - http://www.innocom.gov.cn/gqrdw/c101316/list_zcwj.shtml
+          - http://www.innocom.gov.cn/gqrdw/c101318/list_gsgg.shtml
+        allow_paths:
+          - '^/gqrdw/c\d+/list_(?:zcwj|gsgg)[\w-]*\.shtml$'
+          - '^/gqrdw/c\d+/20\d{4}/[^/]+\.shtml$'
+        detail_paths:
+          - '^/gqrdw/c\d+/20\d{4}/[^/]+\.shtml$'
       - name: gjzwfw_art      # 国家政务服务平台 · 政策文章栏目（高企政策）
         url: https://zc.gjzwfw.gov.cn/art/
         domain: zc.gjzwfw.gov.cn
@@ -146,3 +183,9 @@ categories:
         url: https://zjtx.miit.gov.cn/
         domain: zjtx.miit.gov.cn
         js: true
+        start_urls:
+          - https://zjtx.miit.gov.cn/zxqySy/tzggMore
+        allow_paths:
+          - '^/zxqySy/tzgg(?:More|View)$'
+        detail_paths:
+          - '^/zxqySy/tzggView$'

@@ -5,7 +5,9 @@ delay between retries and avoid hammering a site that is rate-limiting us.
 """
 
 import random
-import time
+
+from scrapy.utils.defer import maybe_deferred_to_future
+from twisted.internet.task import deferLater
 
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
 from scrapy.utils.response import response_status_message
@@ -14,23 +16,31 @@ from scrapy.utils.response import response_status_message
 class PoliteRetryMiddleware(RetryMiddleware):
     """Retry with randomised backoff; respects ``meta['_polite_retry_delay']``."""
 
-    def _wait(self, request):
+    async def _wait(self, request):
+        # Import lazily so Scrapy can install its configured reactor first.
+        from twisted.internet import reactor
         delay = request.meta.get("_polite_retry_delay")
         if delay is None:
             delay = random.uniform(1.0, 4.0)
-        time.sleep(delay)
+        await maybe_deferred_to_future(deferLater(reactor, delay, lambda: None))
 
-    def process_response(self, request, response, spider):
+    async def process_response(self, request, response, spider):
         if request.meta.get("dont_retry", False):
             return response
         if response.status in self.retry_http_codes:
             reason = response_status_message(response.status)
-            self._wait(request)
-            return self._retry(request, reason) or response
+            retry = self._retry(request, reason)
+            if retry:
+                await self._wait(request)
+            return retry or response
         return response
 
-    def process_exception(self, request, exception, spider):
+    async def process_exception(self, request, exception, spider):
         if request.meta.get("dont_retry", False):
             return None
-        self._wait(request)
-        return self._retry(request, str(exception))
+        if not isinstance(exception, self.exceptions_to_retry):
+            return None
+        retry = self._retry(request, exception)
+        if retry:
+            await self._wait(request)
+        return retry

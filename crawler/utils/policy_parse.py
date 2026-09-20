@@ -149,16 +149,25 @@ def _container_xpath(spec: str) -> str:
 
 def extract_content(response) -> str:
     """Return the main article body, scoring candidate containers by length."""
+    # TRS editor marks the article itself; outer #main/.content containers
+    # often include controls, related links and inline JavaScript.
+    text_path = ".//text()[not(ancestor::script) and not(ancestor::style)]"
+    editors = response.xpath(_container_xpath(".TRS_Editor"))
+    if editors:
+        editor = max(editors, key=lambda node: len("".join(node.xpath(text_path).getall())))
+        text = "\n".join(line for line in editor.xpath(text_path).getall() if line.strip())
+        if text.strip():
+            return text
     best_node = None
     best_len = 0
     for spec in _CONTENT_CONTAINERS:
         for node in response.xpath(_container_xpath(spec)):
-            text = " ".join(node.xpath(".//text()").getall())
+            text = " ".join(node.xpath(text_path).getall())
             if len(text) > best_len:
                 best_node, best_len = node, len(text)
     if best_node is not None:
         return "\n".join(
-            line for line in best_node.xpath(".//text()").getall() if line.strip()
+            line for line in best_node.xpath(text_path).getall() if line.strip()
         )
     # Fallback: every <p> in the document (nav/footer text is usually not <p>).
     # 用 //p 而非 body p——规避部分页面正文不在 body 子树下的情况（如 gov.cn）。
@@ -169,6 +178,33 @@ def extract_content(response) -> str:
 
 def _normalise_date(match: re.Match[str]) -> str:
     return f"{match.group(1)}-{int(match.group(2)):02d}-{int(match.group(3)):02d}"
+
+
+def extract_pub_datetime(response) -> str | None:
+    """Read publication metadata/labels only; never infer time from body dates."""
+    from crawler.utils.publication_time import parse_publication_time
+
+    candidates = []
+    for node in response.css("meta"):
+        key = (node.attrib.get("name") or node.attrib.get("property")
+               or node.attrib.get("http-equiv") or "").lower()
+        if key in {"pubdate", "publishdate", "publish_date", "date",
+                   "article:published_time"}:
+            candidates.append(node.attrib.get("content", ""))
+    # Script/style dates and dates inside policy clauses are not publication times.
+    text = " ".join(response.xpath(
+        "//body//text()[not(ancestor::script) and not(ancestor::style)]"
+    ).getall())
+    candidates.extend(re.findall(
+        r"(?:发布时间|发布日期|发布于)\s*[：:]?\s*"
+        r"(20\d{2}[-./年]\d{1,2}[-./月]\d{1,2}日?"
+        r"[T\s]+\d{1,2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)", text
+    ))
+    for candidate in candidates:
+        timestamp = parse_publication_time(candidate)
+        if timestamp is not None:
+            return timestamp.isoformat()
+    return None
 
 
 def extract_pub_date(response) -> str | None:
